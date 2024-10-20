@@ -34,6 +34,11 @@ contract TokenSale is ITokenSale, Ownable, Pausable {
         SALE_TOKEN_PRECISION = 10 ** IERC20Metadata(_saleToken).decimals();
     }
 
+    modifier roundExists(uint256 _roundId) {
+        if (_roundId == 0 || _roundId > rounds.length) revert InvalidRoundId();
+        _;
+    }
+
     function createRound(
         RoundType _roundType,
         address _paymentToken,
@@ -72,8 +77,7 @@ contract TokenSale is ITokenSale, Ownable, Pausable {
         emit RoundCreated(rounds.length, _roundType, _paymentToken, _tokenAmount, _price, _startTime, _endTime);
     }
 
-    function buyTokens(uint256 _roundId, uint256 _amount) external payable whenNotPaused {
-        if (_roundId == 0 || _roundId > rounds.length) revert InvalidRoundId();
+    function buyTokens(uint256 _roundId, uint256 _amount) external payable whenNotPaused roundExists(_roundId) {
         Round storage round = roundsById[_roundId];
         if (block.timestamp < round.startTime || block.timestamp > round.endTime) revert RoundNotActive();
         if (round.soldAmount + _amount > round.tokenAmount) revert InsufficientTokensInRound();
@@ -139,17 +143,13 @@ contract TokenSale is ITokenSale, Ownable, Pausable {
         _unpause();
     }
 
-    function getPaymentAmountForTokens(uint256 _roundId, uint256 _tokenAmount) public view returns (uint256) {
-        if (_roundId == 0 || _roundId > rounds.length) revert InvalidRoundId();
-        Round storage round = roundsById[_roundId];
-
+    function getPaymentAmountForTokens(uint256 _roundId, uint256 _tokenAmount) public view roundExists(_roundId) returns (uint256) {
+        Round memory round = roundsById[_roundId];
         return _tokenAmount * round.price / SALE_TOKEN_PRECISION;
     }
 
-    function getTokenAmountForPayment(uint256 _roundId, uint256 _paymentAmount) public view returns (uint256) {
-        if (_roundId == 0 || _roundId > rounds.length) revert InvalidRoundId();
-        Round storage round = roundsById[_roundId];
-
+    function getTokenAmountForPayment(uint256 _roundId, uint256 _paymentAmount) public view roundExists(_roundId) returns (uint256) {
+        Round memory round = roundsById[_roundId];
         return _paymentAmount * SALE_TOKEN_PRECISION / round.price;
     }
 
