@@ -2,6 +2,7 @@
 pragma solidity ^0.8.27;
 
 import {SafeERC20} from "@openzeppelin/contracts/token/ERC20/utils/SafeERC20.sol";
+import {ReentrancyGuard} from "@openzeppelin/contracts/utils/ReentrancyGuard.sol";
 import {Pausable} from "@openzeppelin/contracts/utils/Pausable.sol";
 import {Ownable} from "@openzeppelin/contracts/access/Ownable.sol";
 
@@ -11,7 +12,7 @@ import {ITokenVesting} from "./interface/ITokenVesting.sol";
 import {IWETH} from"./interface/IWETH.sol";
 import {ITokenSale} from "./interface/ITokenSale.sol";
 
-contract TokenSale is ITokenSale, Ownable, Pausable {
+contract TokenSale is ITokenSale, Ownable, ReentrancyGuard, Pausable {
     using SafeERC20 for IERC20;
 
     IERC20 public immutable SALE_TOKEN;
@@ -55,6 +56,7 @@ contract TokenSale is ITokenSale, Ownable, Pausable {
         if (_startTime <= block.timestamp) revert StartTimeInPast();
         if (_endTime <= _startTime) revert EndTimeBeforeStartTime();
         if (_price == 0) revert InvalidPrice();
+        if (_tokenAmount == 0) revert NoTokensToRound();
         if (!_isContract(_paymentToken)) revert IsNotContract(_paymentToken);
 
         Round memory newRound = Round({
@@ -77,12 +79,14 @@ contract TokenSale is ITokenSale, Ownable, Pausable {
         emit RoundCreated(rounds.length, _roundType, _paymentToken, _tokenAmount, _price, _startTime, _endTime);
     }
 
-    function buyTokens(uint256 _roundId, uint256 _amount) external payable whenNotPaused roundExists(_roundId) {
-        Round storage round = roundsById[_roundId];
+    function buyTokens(uint256 _roundId, uint256 _amount) external payable whenNotPaused nonReentrant roundExists(_roundId) {
+        Round memory round = roundsById[_roundId];
+        if (_amount == 0) revert NoTokensToBuy();
         if (block.timestamp < round.startTime || block.timestamp > round.endTime) revert RoundNotActive();
         if (round.soldAmount + _amount > round.tokenAmount) revert InsufficientTokensInRound();
 
         uint256 paymentAmount = getPaymentAmountForTokens(_roundId, _amount);
+        if (paymentAmount == 0) revert PaymentAmountIsZero();
 
         if (round.paymentToken == address(WETH_TOKEN)) {
             if (msg.value < paymentAmount) revert InsufficientEthSent();
@@ -113,7 +117,7 @@ contract TokenSale is ITokenSale, Ownable, Pausable {
         });
 
         userPurchases[msg.sender].push(newPurchase);
-        round.soldAmount += _amount;
+        roundsById[_roundId].soldAmount += _amount;
 
         emit TokensPurchased(msg.sender, _roundId, _amount, paymentAmount);
     }
@@ -151,6 +155,11 @@ contract TokenSale is ITokenSale, Ownable, Pausable {
     function getTokenAmountForPayment(uint256 _roundId, uint256 _paymentAmount) public view roundExists(_roundId) returns (uint256) {
         Round memory round = roundsById[_roundId];
         return _paymentAmount * SALE_TOKEN_PRECISION / round.price;
+    }
+
+    function getTotalEarningsForRound(uint256 _roundId) public view roundExists(_roundId) returns (uint256) {
+        Round memory round = roundsById[_roundId];
+        return round.soldAmount * round.price / SALE_TOKEN_PRECISION;
     }
 
     function getUserPurchases(address _user) public view returns (Purchase[] memory) {

@@ -34,6 +34,8 @@ interface ITokenSale {
     error IsNotContract(address _address);
     error VestingContractIsNotSet();
     error VestingAlreadySet();
+    error NoTokensToRound();
+    error NoTokensToBuy();
     error StartTimeInPast();
     error EndTimeBeforeStartTime();
     error InvalidPrice();
@@ -42,6 +44,7 @@ interface ITokenSale {
     error RoundNotActive();
     error InsufficientTokensInRound();
     error InsufficientEthSent();
+    error PaymentAmountIsZero();
     error EthNotAllowedForErc20Purchase();
 
     event RoundCreated(
