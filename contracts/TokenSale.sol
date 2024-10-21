@@ -2,7 +2,6 @@
 pragma solidity ^0.8.27;
 
 import {SafeERC20} from "@openzeppelin/contracts/token/ERC20/utils/SafeERC20.sol";
-import {ReentrancyGuard} from "@openzeppelin/contracts/utils/ReentrancyGuard.sol";
 import {Pausable} from "@openzeppelin/contracts/utils/Pausable.sol";
 import {Ownable} from "@openzeppelin/contracts/access/Ownable.sol";
 
@@ -12,7 +11,7 @@ import {ITokenVesting} from "./interface/ITokenVesting.sol";
 import {IWETH} from"./interface/IWETH.sol";
 import {ITokenSale} from "./interface/ITokenSale.sol";
 
-contract TokenSale is ITokenSale, Ownable, ReentrancyGuard, Pausable {
+contract TokenSale is ITokenSale, Ownable, Pausable {
     using SafeERC20 for IERC20;
 
     IERC20 public immutable SALE_TOKEN;
@@ -79,7 +78,7 @@ contract TokenSale is ITokenSale, Ownable, ReentrancyGuard, Pausable {
         emit RoundCreated(rounds.length, _roundType, _paymentToken, _tokenAmount, _price, _startTime, _endTime);
     }
 
-    function buyTokens(uint256 _roundId, uint256 _amount) external payable whenNotPaused nonReentrant roundExists(_roundId) {
+    function buyTokens(uint256 _roundId, uint256 _amount) external payable whenNotPaused roundExists(_roundId) {
         Round memory round = roundsById[_roundId];
         if (_amount == 0) revert NoTokensToBuy();
         if (block.timestamp < round.startTime || block.timestamp > round.endTime) revert RoundNotActive();
@@ -91,10 +90,12 @@ contract TokenSale is ITokenSale, Ownable, ReentrancyGuard, Pausable {
         if (round.paymentToken == address(WETH_TOKEN)) {
             if (msg.value < paymentAmount) revert InsufficientEthSent();
 
-            WETH_TOKEN.deposit{value: paymentAmount}();
-            uint256 excess = msg.value - paymentAmount;
+            uint256 wethBalanceBefore = WETH_TOKEN.balanceOf(address(this));
+            WETH_TOKEN.deposit{value: msg.value}();
 
-            if (excess > 0) payable(msg.sender).transfer(excess);
+            uint256 excess = WETH_TOKEN.balanceOf(address(this)) - (wethBalanceBefore + paymentAmount);
+
+            if (excess > 0) WETH_TOKEN.transfer(msg.sender, excess);
         } else {
             if (msg.value != 0) revert EthNotAllowedForErc20Purchase();
             IERC20(round.paymentToken).safeTransferFrom(msg.sender, address(this), paymentAmount);
