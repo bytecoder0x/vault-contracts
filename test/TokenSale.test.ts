@@ -308,6 +308,98 @@ describe("TokenSale", function () {
             expect(await saleToken.balanceOf(tokenVesting.target)).to.be.eq(0);
         });
 
+        it("Should correctly buy tokens in several different rounds", async function () {
+            // Public Round
+            const publicRoundParams = roundParams;
+            const publicRoundId = roundId;
+
+            // Private Round
+            const privateRoundParams = await createRound({ 
+                roundType: 1, 
+                paymentToken: wethToken.target, 
+                price: TOKEN_PRICE / 2n, 
+                tokenAmount: ROUND_TOKEN_AMOUNT * 2n 
+            });
+            const privateRoundId = 2;
+
+            // Team Round
+            const teamRoundParams = await createRound({ 
+                roundType: 2, 
+                paymentToken: paymentToken.target,
+                price: TOKEN_PRICE / 2n,
+                tokenAmount: ROUND_TOKEN_AMOUNT * 2n 
+            });
+            const teamRoundId = 3;
+            
+            await time.increaseTo(Math.max(publicRoundParams.startTime, privateRoundParams.startTime, teamRoundParams.startTime));
+
+            const publicBuyAmount = ethers.parseEther("1000");
+            const publicPaymentAmount = await tokenSale.getPaymentAmountForTokens(publicRoundId, publicBuyAmount);
+            await paymentToken.transfer(buyer.address, publicPaymentAmount);
+            await paymentToken.connect(buyer).approve(tokenSale.target, publicPaymentAmount);
+            await tokenSale.connect(buyer).buyTokens(publicRoundId, publicBuyAmount);
+
+            const privateBuyAmount = ethers.parseEther("500");
+            const privatePaymentAmount = await tokenSale.getPaymentAmountForTokens(privateRoundId, privateBuyAmount);
+            await tokenSale.connect(buyer).buyTokens(privateRoundId, privateBuyAmount, { value: privatePaymentAmount });
+
+            const teamBuyAmount = ethers.parseEther("2000");
+            const teamPaymentAmount = await tokenSale.getPaymentAmountForTokens(teamRoundId, teamBuyAmount);
+            await paymentToken.transfer(buyer.address, teamPaymentAmount);
+            await paymentToken.connect(buyer).approve(tokenSale.target, teamPaymentAmount);
+            await tokenSale.connect(buyer).buyTokens(teamRoundId, teamBuyAmount);
+
+            const userPurchases = await tokenSale.getUserPurchases(buyer.address);
+            expect(userPurchases.length).to.be.eq(3);
+            expect(userPurchases[0].roundId).to.be.eq(publicRoundId);
+            expect(userPurchases[0].tokenAmount).to.be.eq(publicBuyAmount);
+            expect(userPurchases[1].roundId).to.be.eq(privateRoundId);
+            expect(userPurchases[1].tokenAmount).to.be.eq(privateBuyAmount);
+            expect(userPurchases[2].roundId).to.be.eq(teamRoundId);
+            expect(userPurchases[2].tokenAmount).to.be.eq(teamBuyAmount);
+
+            expect(await paymentToken.balanceOf(tokenSale.target)).to.be.eq(publicPaymentAmount + teamPaymentAmount);
+            expect(await wethToken.balanceOf(tokenSale.target)).to.be.eq(privatePaymentAmount);
+            expect(await saleToken.balanceOf(tokenVesting.target)).to.be.eq(publicBuyAmount + privateBuyAmount + teamBuyAmount);
+
+            await time.increaseTo(Math.max(publicRoundParams.vestingEndTime, privateRoundParams.vestingEndTime, teamRoundParams.vestingEndTime));
+            await tokenVesting.connect(buyer).claimTokens();
+
+            expect(await saleToken.balanceOf(buyer.address)).to.be.eq(publicBuyAmount + privateBuyAmount + teamBuyAmount);
+            expect(await saleToken.balanceOf(tokenVesting.target)).to.be.eq(0);
+        });
+
+        it("Should correctly buy tokens in the same round twice", async function () {
+            const firstBuyAmount = ethers.parseEther("1000");
+            const firstPaymentAmount = await tokenSale.getPaymentAmountForTokens(roundId, firstBuyAmount);
+            await paymentToken.transfer(buyer.address, firstPaymentAmount * 2n); 
+            await paymentToken.connect(buyer).approve(tokenSale.target, firstPaymentAmount * 2n);
+            await tokenSale.connect(buyer).buyTokens(roundId, firstBuyAmount);
+    
+            const secondBuyAmount = ethers.parseEther("500");
+            const secondPaymentAmount = await tokenSale.getPaymentAmountForTokens(roundId, secondBuyAmount);
+            await tokenSale.connect(buyer).buyTokens(roundId, secondBuyAmount);
+    
+            const userPurchases = await tokenSale.getUserPurchases(buyer.address);
+            expect(userPurchases.length).to.be.eq(2);
+            expect(userPurchases[0].roundId).to.be.eq(roundId);
+            expect(userPurchases[0].tokenAmount).to.be.eq(firstBuyAmount);
+            expect(userPurchases[1].roundId).to.be.eq(roundId);
+            expect(userPurchases[1].tokenAmount).to.be.eq(secondBuyAmount);
+    
+            expect(await paymentToken.balanceOf(tokenSale.target)).to.be.eq(firstPaymentAmount + secondPaymentAmount);
+            expect(await saleToken.balanceOf(tokenVesting.target)).to.be.eq(firstBuyAmount + secondBuyAmount);
+    
+            const round = await tokenSale.roundsById(roundId);
+            expect(round.soldAmount).to.be.eq(firstBuyAmount + secondBuyAmount);
+
+            await time.increaseTo(roundParams.vestingEndTime);
+            await tokenVesting.connect(buyer).claimTokens();
+
+            expect(await saleToken.balanceOf(buyer.address)).to.be.eq(firstBuyAmount + secondBuyAmount);
+            expect(await saleToken.balanceOf(tokenVesting.target)).to.be.eq(0);
+        });
+
         it("Should correctly return excess of ETH in WETH to sender", async function () {
             const wethRoundParams = await createRound({ paymentToken: wethToken.target });
             const wethRoundId = 2;
