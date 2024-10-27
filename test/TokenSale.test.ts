@@ -51,7 +51,7 @@ describe("TokenSale", function () {
             tokenAmount: ROUND_TOKEN_AMOUNT,
             startTime: await time.latest() + 3600, // 1 hour from now
             endTime: (await time.latest()) + 3600 + 86400, // 24 hours duration
-            vestingStartTime: (await time.latest()) + 3600 + 86400,
+            vestingStartTime: (await time.latest()) + 3600 + 3600 + 86400,
             vestingEndTime: (await time.latest()) + 3600 + 86400 + 2592000, // 30 days vesting
             vestingCliffPeriod: 86400, // 1 day cliff
             vestingSlicePeriod: 86400, // 1 day slice period
@@ -215,6 +215,29 @@ describe("TokenSale", function () {
         it("Should prevent if payment token is not a contract", async function () {
             await expect(createRound({ paymentToken: ethers.ZeroAddress }))
                 .to.be.revertedWithCustomError(tokenSale, "IsNotContract");
+        });
+        
+        it("Should prevent if end time before vesting start time", async function () {
+            const now = await time.latest();
+            await expect(createRound({ vestingStartTime: now }))
+                .to.be.revertedWithCustomError(tokenSale, "EndTimeBeforeVestingStartTime");
+        });
+
+        it("Should prevent if vesting end time before vesting start time", async function () {
+            const now = await time.latest();
+            await expect(createRound({ vestingEndTime: now, }))
+                .to.be.revertedWithCustomError(tokenSale, "VestingEndTimeBeforeVestingStartTime");
+        });
+
+        it("Should prevent if vesting cliff and slice period larger than total vesting duration", async function () {
+            const vestingCliffPeriod = 30 * 24 * 3600; // 30 days
+            await expect(createRound({ vestingCliffPeriod })).to.be.revertedWithCustomError(tokenSale, "VestingCliffAndSlicePeriodTooLong");
+        });
+
+        it("Should prevent if vesting slice period is zero", async function () {
+            const now = await time.latest();
+            await expect(createRound({ vestingSlicePeriod: 0, }))
+                .to.be.revertedWithCustomError(tokenSale, "VestingSlicePeriodIsZero");
         });
         
         it("Should prevent if round doesn't exist", async function () {

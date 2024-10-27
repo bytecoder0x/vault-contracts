@@ -46,6 +46,11 @@ interface ITokenSale {
     error InsufficientEthSent();
     error PaymentAmountIsZero();
     error EthNotAllowedForErc20Purchase();
+    error EndTimeBeforeVestingStartTime();
+    error VestingSlicePeriodIsZero();
+    error VestingEndTimeInPast();
+    error VestingEndTimeBeforeVestingStartTime();
+    error VestingCliffAndSlicePeriodTooLong();
 
     event RoundCreated(
         uint256 indexed roundId,
