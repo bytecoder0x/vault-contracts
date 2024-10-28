@@ -57,6 +57,10 @@ contract TokenSale is ITokenSale, Ownable, Pausable {
         if (_price == 0) revert InvalidPrice();
         if (_tokenAmount == 0) revert NoTokensToRound();
         if (!_isContract(_paymentToken)) revert IsNotContract(_paymentToken);
+        if (_vestingStartTime < _endTime) revert EndTimeBeforeVestingStartTime();
+        if (_vestingSlicePeriod == 0) revert VestingSlicePeriodIsZero();
+        if (_vestingEndTime <= _vestingStartTime) revert VestingEndTimeBeforeVestingStartTime();
+        if (_vestingCliffPeriod + _vestingSlicePeriod > _vestingEndTime - _vestingStartTime) revert VestingCliffAndSlicePeriodTooLong();
 
         Round memory newRound = Round({
             roundType: _roundType,
