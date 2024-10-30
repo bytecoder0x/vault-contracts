@@ -18,6 +18,7 @@ contract TokenSale is ITokenSale, Ownable, Pausable {
     IWETH public immutable WETH_TOKEN;
     uint256 public immutable SALE_TOKEN_PRECISION;
 
+    uint256 public totalTokensForSale;
     address public vestingContract;
 
     Round[] rounds;
@@ -76,6 +77,7 @@ contract TokenSale is ITokenSale, Ownable, Pausable {
             vestingSlicePeriod: _vestingSlicePeriod
         });
 
+        totalTokensForSale += _tokenAmount;
         rounds.push(newRound);
         roundsById[rounds.length] = newRound;
 
@@ -150,6 +152,17 @@ contract TokenSale is ITokenSale, Ownable, Pausable {
 
     function unpause() external onlyOwner {
         _unpause();
+    }
+
+    function getCurrentRoundId() external view returns (uint256) {
+        uint256 currentTime = block.timestamp;
+        for (uint256 i = 1; i <= rounds.length; i++) {
+            Round memory round = roundsById[i];
+            if (currentTime >= round.startTime && currentTime <= round.endTime) {
+                return i;
+            }
+        }
+        return 0;
     }
 
     function getPaymentAmountForTokens(uint256 _roundId, uint256 _tokenAmount) public view roundExists(_roundId) returns (uint256) {
