@@ -23,6 +23,8 @@ contract Vault is Initializable, ERC4626Upgradeable, OwnableUpgradeable {
     error ExceedsVaultSize();
     error InsufficientBalance();
 
+    uint256 public constant MAX_BIPS = 100_00;
+
     uint256 public interestRate;
     uint256 public desiredCap;
     uint256 public startTime;
@@ -68,9 +70,10 @@ contract Vault is Initializable, ERC4626Upgradeable, OwnableUpgradeable {
 
     function depositInterest() external onlyOwner {
         IERC20Upgradeable assetToken = IERC20Upgradeable(asset());
-        assetToken.safeTransferFrom(msg.sender, address(this), desiredCap);
+        uint256 interestAmount = (desiredCap * interestRate) / MAX_BIPS + desiredCap;
+        assetToken.safeTransferFrom(msg.sender, address(this), interestAmount);
         endTime = block.timestamp;
-        emit InterestDeposited(desiredCap);
+        emit InterestDeposited(interestAmount);
     }
 
     function withdrawInterest(uint256 amount) external onlyOwner {
