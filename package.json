@@ -3,6 +3,7 @@
   "devDependencies": {
     "@nomicfoundation/hardhat-toolbox": "^5.0.0",
     "@openzeppelin/contracts": "^5.0.2",
+    "@quadrata/contracts": "^1.0.3",
     "hardhat": "^2.22.13"
   },
   "dependencies": {
