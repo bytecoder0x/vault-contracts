@@ -7,9 +7,9 @@ import {Ownable} from "@openzeppelin/contracts/access/Ownable.sol";
 
 import {IERC20Metadata} from "@openzeppelin/contracts/token/ERC20/extensions/IERC20Metadata.sol";
 import {IERC20} from "@openzeppelin/contracts/token/ERC20/IERC20.sol";
-import {ITokenVesting} from "./interface/ITokenVesting.sol";
-import {IWETH} from"./interface/IWETH.sol";
-import {ITokenSale} from "./interface/ITokenSale.sol";
+import {ITokenVesting} from "../interfaces/vesting/ITokenVesting.sol";
+import {IWETH} from "../interfaces/common/IWETH.sol";
+import {ITokenSale} from "../interfaces/sale/ITokenSale.sol";
 
 contract TokenSale is ITokenSale, Ownable, Pausable {
     using SafeERC20 for IERC20;

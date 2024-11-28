@@ -3,7 +3,7 @@ pragma solidity ^0.8.27;
 
 import {IERC20} from "@openzeppelin/contracts/token/ERC20/IERC20.sol";
 import {Ownable} from "@openzeppelin/contracts/access/Ownable.sol";
-import {ITokenVesting} from "./interface/ITokenVesting.sol";
+import {ITokenVesting} from "../interfaces/vesting/ITokenVesting.sol";
 
 contract TokenVesting is ITokenVesting, Ownable {
     IERC20 public immutable TOKEN;
