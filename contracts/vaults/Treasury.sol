@@ -6,6 +6,7 @@ import {IERC20} from "@openzeppelin/contracts/token/ERC20/IERC20.sol";
 import {SafeERC20} from "@openzeppelin/contracts/token/ERC20/utils/SafeERC20.sol";
 import {IVaultFactory} from "../interfaces/vaults/IVaultFactory.sol";
 import {ITreasury} from "../interfaces/vaults/ITreasury.sol";
+import {ILicense} from "../interfaces/vaults/ILicense.sol";
 
 contract Treasury is AccessControl, ITreasury {
     using SafeERC20 for IERC20;
@@ -13,6 +14,7 @@ contract Treasury is AccessControl, ITreasury {
 
     IVaultFactory public immutable VAULT_FACTORY;
     IERC20 public immutable GOIL_TOKEN;
+    ILicense public immutable LICENSE;
     address public immutable SCORING;
     address public immutable STAKING;
 
@@ -28,14 +30,16 @@ contract Treasury is AccessControl, ITreasury {
         _;
     }
 
-    constructor(address _goilToken, address _scoring, address _staking, address _vaultFactory, address _admin) {
-        if (!_isContract(_vaultFactory)) revert VaultFactoryMustBeContract();
+    constructor(address _goilToken, address _scoring, address _staking, address _license, address _vaultFactory, address _admin) {
         if (!_isContract(_goilToken)) revert GoilTokenMustBeContract();
         if (!_isContract(_scoring)) revert ScoringMustBeContract();
         if (!_isContract(_staking)) revert StakingMustBeContract();
+        if (!_isContract(_license)) revert LicenseMustBeContract();
+        if (!_isContract(_vaultFactory)) revert VaultFactoryMustBeContract();
         if (_admin == address(0)) revert AdminCannotBeZeroAddress();
 
         VAULT_FACTORY = IVaultFactory(_vaultFactory);
+        LICENSE = ILicense(_license);
         GOIL_TOKEN = IERC20(_goilToken);
         SCORING = _scoring;
         STAKING = _staking;
@@ -55,6 +59,7 @@ contract Treasury is AccessControl, ITreasury {
 
     function withdrawCollateral(uint256 _amount) external {
         if (_amount == 0) revert ZeroAmountToWithdraw();
+        if (LICENSE.getLicenseIsActive(msg.sender)) revert CannotWithdrawDuringActiveLicense();
         if (collateralDeposited[msg.sender] < _amount) revert InsufficientCollateral();
 
         collateralDeposited[msg.sender] -= _amount;

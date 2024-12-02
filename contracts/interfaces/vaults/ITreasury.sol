@@ -17,13 +17,15 @@ interface ITreasury {
     error GoilTokenMustBeContract();
     error ScoringMustBeContract();
     error StakingMustBeContract();
+    error LicenseMustBeContract();
     error AdminCannotBeZeroAddress();
     error RecipientCannotBeZeroAddress();
     error ZeroAmountToDeposit();
     error ZeroAmountToWithdraw();
+    error CannotWithdrawDuringActiveLicense();
     error InsufficientCollateral();
     error VaultIsNotValid();
-    
+
     function collateralDeposited(address) external view returns (uint256);
     
     function depositCollateral(uint256 _amount) external;

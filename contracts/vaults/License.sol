@@ -2,12 +2,10 @@
 pragma solidity ^0.8.27;
 
 import {AccessControl} from "@openzeppelin/contracts/access/AccessControl.sol";
-import {QuadReaderUtils} from "@quadrata/contracts/utility/QuadReaderUtils.sol";
-import {IQuadPassportStore} from "@quadrata/contracts/interfaces/IQuadPassportStore.sol";
 import {IQuadReader} from "@quadrata/contracts/interfaces/IQuadReader.sol";
 import {IERC20} from "@openzeppelin/contracts/token/ERC20/IERC20.sol";
 import {ILicense} from "../interfaces/vaults/ILicense.sol";
-import "hardhat/console.sol";
+
 contract License is AccessControl, ILicense {
     bytes32 public constant MANAGER_ROLE = keccak256("MANAGER_ROLE");
     bytes32 public constant REQUIRED_KYB = keccak256("IS_BUSINESS");
