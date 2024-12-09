@@ -6,14 +6,7 @@ import {IWETH} from "../common/IWETH.sol";
 import {ITokenVesting} from "../vesting/ITokenVesting.sol";
 
 interface ITokenSale {
-    enum RoundType {
-        PUBLIC,
-        PRIVATE,
-        TEAM
-    }
-
     struct Round {
-        RoundType roundType;
         address paymentToken;
         uint256 price;
         uint256 tokenAmount;
@@ -51,10 +44,10 @@ interface ITokenSale {
     error VestingEndTimeInPast();
     error VestingEndTimeBeforeVestingStartTime();
     error VestingCliffAndSlicePeriodTooLong();
+    error RoundStartTimeBeforePreviousRoundEndTime();
 
     event RoundCreated(
         uint256 indexed roundId,
-        RoundType roundType,
         address paymentToken,
         uint256 tokenAmount,
         uint256 price,
@@ -80,7 +73,6 @@ interface ITokenSale {
         external
         view
         returns (
-            RoundType roundType,
             address paymentToken,
             uint256 price,
             uint256 tokenAmount,
@@ -95,7 +87,6 @@ interface ITokenSale {
     function userPurchases(address, uint256) external view returns (uint256 roundId, uint256 tokenAmount);
 
     function createRound(
-        RoundType _roundType,
         address _paymentToken,
         uint256 _price,
         uint256 _tokenAmount,

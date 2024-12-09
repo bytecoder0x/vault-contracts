@@ -21,7 +21,7 @@ contract TokenSale is ITokenSale, Ownable, Pausable {
     uint256 public totalTokensForSale;
     address public vestingContract;
 
-    Round[] rounds;
+    Round[] public rounds;
 
     mapping(uint256 => Round) public roundsById;
     mapping(address => Purchase[]) public userPurchases;
@@ -41,7 +41,6 @@ contract TokenSale is ITokenSale, Ownable, Pausable {
     }
 
     function createRound(
-        RoundType _roundType,
         address _paymentToken,
         uint256 _price,
         uint256 _tokenAmount,
@@ -62,9 +61,9 @@ contract TokenSale is ITokenSale, Ownable, Pausable {
         if (_vestingSlicePeriod == 0) revert VestingSlicePeriodIsZero();
         if (_vestingEndTime <= _vestingStartTime) revert VestingEndTimeBeforeVestingStartTime();
         if (_vestingCliffPeriod + _vestingSlicePeriod > _vestingEndTime - _vestingStartTime) revert VestingCliffAndSlicePeriodTooLong();
+        if (_startTime <= roundsById[rounds.length].endTime) revert RoundStartTimeBeforePreviousRoundEndTime();
 
         Round memory newRound = Round({
-            roundType: _roundType,
             paymentToken: _paymentToken,
             price: _price,
             tokenAmount: _tokenAmount,
@@ -80,8 +79,9 @@ contract TokenSale is ITokenSale, Ownable, Pausable {
         totalTokensForSale += _tokenAmount;
         rounds.push(newRound);
         roundsById[rounds.length] = newRound;
+        SALE_TOKEN.transferFrom(msg.sender, address(this), _tokenAmount);
 
-        emit RoundCreated(rounds.length, _roundType, _paymentToken, _tokenAmount, _price, _startTime, _endTime);
+        emit RoundCreated(rounds.length, _paymentToken, _tokenAmount, _price, _startTime, _endTime);
     }
 
     function buyTokens(uint256 _roundId, uint256 _amount) external payable whenNotPaused roundExists(_roundId) {
@@ -106,7 +106,7 @@ contract TokenSale is ITokenSale, Ownable, Pausable {
             if (msg.value != 0) revert EthNotAllowedForErc20Purchase();
             IERC20(round.paymentToken).safeTransferFrom(msg.sender, address(this), paymentAmount);
         }
-
+        
         SALE_TOKEN.approve(vestingContract, _amount);
         ITokenVesting(vestingContract).createVesting(
             msg.sender,
@@ -115,7 +115,7 @@ contract TokenSale is ITokenSale, Ownable, Pausable {
             round.vestingCliffPeriod,
             round.vestingSlicePeriod,
             _amount,
-            ITokenVesting.VestingType(uint8(round.roundType))
+            ITokenVesting.VestingType.PUBLIC
         );
 
         Purchase memory newPurchase = Purchase({

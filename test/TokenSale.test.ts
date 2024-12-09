@@ -5,7 +5,7 @@ import { HardhatEthersSigner } from "@nomicfoundation/hardhat-ethers/signers";
 import { loadFixture } from "@nomicfoundation/hardhat-network-helpers";
 import { time } from "@nomicfoundation/hardhat-network-helpers";
 
-describe("TokenSale", function () {
+describe.only("TokenSale", function () {
     let tokenSale: TokenSale;
     let saleToken: MockERC20;
     let paymentToken: MockERC20;
@@ -38,14 +38,11 @@ describe("TokenSale", function () {
         await tokenSale.setVestingContract(tokenVesting.target);
         await tokenVesting.setPresaleContract(tokenSale.target);
 
-        await saleToken.transfer(tokenSale.target, INITIAL_SUPPLY);
-
         return { tokenSale, saleToken, wethToken, paymentToken, tokenVesting, owner, buyer, otherAccount };
     };
 
     const createRound = async (overrides = {}) => {
         const defaultParams = {
-            roundType: 0, // PUBLIC
             paymentToken: paymentToken.target,
             price: TOKEN_PRICE,
             tokenAmount: ROUND_TOKEN_AMOUNT,
@@ -60,8 +57,8 @@ describe("TokenSale", function () {
 
         const params = { ...defaultParams, ...overrides };
 
+        await saleToken.approve(tokenSale.target, params.tokenAmount);
         await tokenSale.connect(params.sender).createRound(
-            params.roundType,
             params.paymentToken,
             params.price,
             params.tokenAmount,
@@ -166,8 +163,8 @@ describe("TokenSale", function () {
             const round = await tokenSale.roundsById(1);
             const rounds = await tokenSale.getAllRounds();
 
+            expect(await saleToken.balanceOf(tokenSale.target)).to.be.eq(roundParams.tokenAmount);
             expect(rounds.length).to.be.eq(await tokenSale.getRoundsCount());
-            expect(round.roundType).to.be.eq(roundParams.roundType);
             expect(round.paymentToken).to.be.eq(roundParams.paymentToken);
             expect(round.price).to.be.eq(roundParams.price);
             expect(round.tokenAmount).to.be.eq(roundParams.tokenAmount);
@@ -176,7 +173,7 @@ describe("TokenSale", function () {
         });
 
         it("Should prevent if it is not called by the owner", async function () {
-            await expect(tokenSale.connect(otherAccount).createRound(0, ethers.ZeroAddress, 0, 0, 0, 0, 0, 0, 0, 0)).to.be.revertedWithCustomError(
+            await expect(tokenSale.connect(otherAccount).createRound(ethers.ZeroAddress, 0, 0, 0, 0, 0, 0, 0, 0)).to.be.revertedWithCustomError(
                 tokenSale,
                 "OwnableUnauthorizedAccount",
             );
@@ -187,7 +184,7 @@ describe("TokenSale", function () {
             const TokenSale = await ethers.getContractFactory("TokenSale");
             const newTokenSale = await TokenSale.deploy(saleToken.target, wethToken.target, owner.address);
 
-            await expect(newTokenSale.createRound(0, ethers.ZeroAddress, 0, 0, 0, 0, 0, 0, 0, 0))
+            await expect(newTokenSale.createRound(ethers.ZeroAddress, 0, 0, 0, 0, 0, 0, 0, 0))
                 .to.be.revertedWithCustomError(newTokenSale, "VestingContractIsNotSet");
         });
 
@@ -238,6 +235,11 @@ describe("TokenSale", function () {
             const now = await time.latest();
             await expect(createRound({ vestingSlicePeriod: 0, }))
                 .to.be.revertedWithCustomError(tokenSale, "VestingSlicePeriodIsZero");
+        });
+
+        it("Should prevent if start time is before previous round end time", async function () {
+            await createRound();
+            await expect(createRound()).to.be.revertedWithCustomError(tokenSale, "RoundStartTimeBeforePreviousRoundEndTime");
         });
         
         it("Should prevent if round doesn't exist", async function () {
@@ -296,7 +298,7 @@ describe("TokenSale", function () {
         });
 
         it("Should correctly buy tokens with WETH", async function () {
-            const wethRoundParams = await createRound({ paymentToken: wethToken.target });
+            const wethRoundParams = await createRound({ paymentToken: wethToken.target, startTime: roundParams.endTime + 1 });
             const wethRoundId = 2;
             await time.increaseTo(wethRoundParams.startTime);
 
@@ -332,63 +334,63 @@ describe("TokenSale", function () {
         });
 
         it("Should correctly buy tokens in several different rounds", async function () {
-            // Public Round
-            const publicRoundParams = roundParams;
-            const publicRoundId = roundId;
+            const firstRoundParams = roundParams;
+            const firstRoundId = roundId;
 
-            // Private Round
-            const privateRoundParams = await createRound({ 
-                roundType: 1, 
+            const firstBuyAmount = ethers.parseEther("1000");
+            const firstPaymentAmount = await tokenSale.getPaymentAmountForTokens(firstRoundId, firstBuyAmount);
+            await paymentToken.transfer(buyer.address, firstPaymentAmount);
+            await paymentToken.connect(buyer).approve(tokenSale.target, firstPaymentAmount);
+            await tokenSale.connect(buyer).buyTokens(firstRoundId, firstBuyAmount);
+
+
+            await time.increaseTo(firstRoundParams.endTime + 1);
+            const secondRoundParams = await createRound({ 
                 paymentToken: wethToken.target, 
                 price: TOKEN_PRICE / 2n, 
                 tokenAmount: ROUND_TOKEN_AMOUNT * 2n 
             });
-            const privateRoundId = 2;
+            const secondRoundId = 2;
+            await time.increaseTo(secondRoundParams.startTime + 100);
+            
+            const secondBuyAmount = ethers.parseEther("500");
+            const secondPaymentAmount = await tokenSale.getPaymentAmountForTokens(secondRoundId, secondBuyAmount);
+            await tokenSale.connect(buyer).buyTokens(secondRoundId, secondBuyAmount, { value: secondPaymentAmount });
 
-            // Team Round
-            const teamRoundParams = await createRound({ 
-                roundType: 2, 
+            await time.increaseTo(secondRoundParams.endTime + 1);
+            const thirdRoundParams = await createRound({ 
                 paymentToken: paymentToken.target,
                 price: TOKEN_PRICE / 2n,
                 tokenAmount: ROUND_TOKEN_AMOUNT * 2n 
             });
-            const teamRoundId = 3;
-            
-            await time.increaseTo(Math.max(publicRoundParams.startTime, privateRoundParams.startTime, teamRoundParams.startTime));
+            const thirdRoundId = 3;
+            await time.increaseTo(thirdRoundParams.startTime + 100);
 
-            const publicBuyAmount = ethers.parseEther("1000");
-            const publicPaymentAmount = await tokenSale.getPaymentAmountForTokens(publicRoundId, publicBuyAmount);
-            await paymentToken.transfer(buyer.address, publicPaymentAmount);
-            await paymentToken.connect(buyer).approve(tokenSale.target, publicPaymentAmount);
-            await tokenSale.connect(buyer).buyTokens(publicRoundId, publicBuyAmount);
-
-            const privateBuyAmount = ethers.parseEther("500");
-            const privatePaymentAmount = await tokenSale.getPaymentAmountForTokens(privateRoundId, privateBuyAmount);
-            await tokenSale.connect(buyer).buyTokens(privateRoundId, privateBuyAmount, { value: privatePaymentAmount });
-
-            const teamBuyAmount = ethers.parseEther("2000");
-            const teamPaymentAmount = await tokenSale.getPaymentAmountForTokens(teamRoundId, teamBuyAmount);
-            await paymentToken.transfer(buyer.address, teamPaymentAmount);
-            await paymentToken.connect(buyer).approve(tokenSale.target, teamPaymentAmount);
-            await tokenSale.connect(buyer).buyTokens(teamRoundId, teamBuyAmount);
+            const thirdBuyAmount = ethers.parseEther("2000");
+            const thirdPaymentAmount = await tokenSale.getPaymentAmountForTokens(thirdRoundId, thirdBuyAmount);
+            await paymentToken.transfer(buyer.address, thirdPaymentAmount);
+            await paymentToken.connect(buyer).approve(tokenSale.target, thirdPaymentAmount);
+            await tokenSale.connect(buyer).buyTokens(thirdRoundId, thirdBuyAmount);
 
             const userPurchases = await tokenSale.getUserPurchases(buyer.address);
             expect(userPurchases.length).to.be.eq(3);
-            expect(userPurchases[0].roundId).to.be.eq(publicRoundId);
-            expect(userPurchases[0].tokenAmount).to.be.eq(publicBuyAmount);
-            expect(userPurchases[1].roundId).to.be.eq(privateRoundId);
-            expect(userPurchases[1].tokenAmount).to.be.eq(privateBuyAmount);
-            expect(userPurchases[2].roundId).to.be.eq(teamRoundId);
-            expect(userPurchases[2].tokenAmount).to.be.eq(teamBuyAmount);
+            expect(userPurchases[0].roundId).to.be.eq(firstRoundId);
+            expect(userPurchases[0].tokenAmount).to.be.eq(firstBuyAmount);
+            expect(userPurchases[1].roundId).to.be.eq(secondRoundId);
+            expect(userPurchases[1].tokenAmount).to.be.eq(secondBuyAmount);
+            expect(userPurchases[2].roundId).to.be.eq(thirdRoundId);
+            expect(userPurchases[2].tokenAmount).to.be.eq(thirdBuyAmount);
+            expect(await tokenSale.getCurrentRoundId()).to.be.eq(3);
 
-            expect(await paymentToken.balanceOf(tokenSale.target)).to.be.eq(publicPaymentAmount + teamPaymentAmount);
-            expect(await wethToken.balanceOf(tokenSale.target)).to.be.eq(privatePaymentAmount);
-            expect(await saleToken.balanceOf(tokenVesting.target)).to.be.eq(publicBuyAmount + privateBuyAmount + teamBuyAmount);
+            expect(await paymentToken.balanceOf(tokenSale.target)).to.be.eq(firstPaymentAmount + thirdPaymentAmount);
+            expect(await wethToken.balanceOf(tokenSale.target)).to.be.eq(secondPaymentAmount);
+            expect(await saleToken.balanceOf(tokenVesting.target)).to.be.eq(firstBuyAmount + secondBuyAmount + thirdBuyAmount);
 
-            await time.increaseTo(Math.max(publicRoundParams.vestingEndTime, privateRoundParams.vestingEndTime, teamRoundParams.vestingEndTime));
+            await time.increaseTo(Math.max(firstRoundParams.vestingEndTime, secondRoundParams.vestingEndTime, thirdRoundParams.vestingEndTime));
             await tokenVesting.connect(buyer).claimTokens();
 
-            expect(await saleToken.balanceOf(buyer.address)).to.be.eq(publicBuyAmount + privateBuyAmount + teamBuyAmount);
+            expect(await tokenSale.getCurrentRoundId()).to.be.eq(0);
+            expect(await saleToken.balanceOf(buyer.address)).to.be.eq(firstBuyAmount + secondBuyAmount + thirdBuyAmount);
             expect(await saleToken.balanceOf(tokenVesting.target)).to.be.eq(0);
         });
 
@@ -424,7 +426,7 @@ describe("TokenSale", function () {
         });
 
         it("Should correctly return excess of ETH in WETH to sender", async function () {
-            const wethRoundParams = await createRound({ paymentToken: wethToken.target });
+            const wethRoundParams = await createRound({ paymentToken: wethToken.target, startTime: roundParams.endTime + 1 });
             const wethRoundId = 2;
             await time.increaseTo(wethRoundParams.startTime);
 
@@ -476,16 +478,16 @@ describe("TokenSale", function () {
         });
 
         it("Should prevent if payment amount is zero", async function () {
-            const roundParams = await createRound( { price: 1 } );
+            const secondRoundParams = await createRound( { price: 1, startTime: roundParams.endTime + 1 } );
             // it happens when (amount tokens to buy * price for token) less than sale token presicion, its okay approach
 
-            await time.increaseTo(roundParams.startTime + 500);
+            await time.increaseTo(secondRoundParams.startTime + 500);
             await expect(tokenSale.connect(buyer).buyTokens(2, 1))
                 .to.be.revertedWithCustomError(tokenSale, "PaymentAmountIsZero");
         });
 
         it("Should prevent if not enough ether sent during buying", async function () {
-            const wethRoundParams = await createRound({ paymentToken: wethToken.target });
+            const wethRoundParams = await createRound({ paymentToken: wethToken.target, startTime: roundParams.endTime + 1 });
             const wethRoundId = 2;
             await time.increaseTo(wethRoundParams.startTime);
 
@@ -498,13 +500,17 @@ describe("TokenSale", function () {
     describe("Admin functionality", function () {
         it("Should correctly withdraw tokens from contract", async function () {
             const withdrawAmount = ethers.parseEther("1000");
+            await saleToken.transfer(tokenSale.target, withdrawAmount);
+
+            const balanceBefore = await saleToken.balanceOf(owner.address);
             await tokenSale.withdrawTokens(owner.address, saleToken.target, withdrawAmount);
 
-            expect(await saleToken.balanceOf(owner.address)).to.be.eq(withdrawAmount);
-            expect(await saleToken.balanceOf(tokenSale.target)).to.be.eq(INITIAL_SUPPLY - withdrawAmount);
+            expect(await saleToken.balanceOf(owner.address)).to.be.eq(balanceBefore + withdrawAmount);
+            expect(await saleToken.balanceOf(tokenSale.target)).to.be.eq(0);
         });
 
         it("Should correctly withdraw all tokens from contract", async function () {
+            await saleToken.transfer(tokenSale.target, INITIAL_SUPPLY);
             const withdrawAmount = await saleToken.balanceOf(tokenSale.target);
             await tokenSale.withdrawAllTokens(saleToken.target);
 
