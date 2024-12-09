@@ -10,11 +10,13 @@ contract VaultFactory is Ownable {
 
     struct VaultInfo {
         address vault;
+        bool isNativeToken;
         address depositToken;
         uint256 interestRate;
         uint256 desiredCap;
         uint256 startTime;
-        uint256 endTime;
+        uint256 fundingEndTime;
+        uint256 unlockEndTime;
     }
 
     address public vaultImplementation;
@@ -29,27 +31,32 @@ contract VaultFactory is Ownable {
     }
 
     function createVault(
+        bool _isNativeToken,
         address _depositToken,
         uint256 _interestRate,
         uint256 _desiredCap,
         uint256 _startTime,
-        uint256 _expirationPeriod
+        uint256 _fundingPeriod,
+        uint256 _unlockPeriod
     ) public onlyOwner returns (address) {
+        uint256 fundingEndTime = _startTime + _fundingPeriod;
+        uint256 unlockEndTime = _startTime + _unlockPeriod;
+
         Vault vault = Vault(vaultImplementation.clone());
-
-        vault.initialize(_depositToken, _interestRate, _desiredCap, _startTime, _expirationPeriod);
-
-        uint256 vaultId = allVaults.length;
+        vault.initialize(_isNativeToken, _depositToken, _interestRate, _desiredCap, _startTime, fundingEndTime, unlockEndTime);
         VaultInfo memory newVault = VaultInfo({
             vault: address(vault),
+            isNativeToken: _isNativeToken,
             depositToken: _depositToken,
             interestRate: _interestRate,
             desiredCap: _desiredCap,
             startTime: _startTime,
-            endTime: _startTime + _expirationPeriod
+            fundingEndTime: fundingEndTime,
+            unlockEndTime: unlockEndTime
         });
 
         allVaults.push(newVault);
+        uint256 vaultId = allVaults.length;
         vaultById[vaultId] = newVault;
 
         emit VaultCreated(address(vault), vaultId);
