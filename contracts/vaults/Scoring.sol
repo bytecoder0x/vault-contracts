@@ -4,6 +4,8 @@ pragma solidity ^0.8.27;
 import {AccessControl} from "@openzeppelin/contracts/access/AccessControl.sol";
 import {IERC20} from "@openzeppelin/contracts/token/ERC20/IERC20.sol";
 import {IVaultFactory} from "../interfaces/vaults/IVaultFactory.sol";
+import {IVault} from "../interfaces/vaults/IVault.sol";
+import {ITreasury} from "../interfaces/vaults/ITreasury.sol";
 import {IScoring} from "../interfaces/vaults/IScoring.sol";
 
 contract Scoring is AccessControl, IScoring {
@@ -26,6 +28,7 @@ contract Scoring is AccessControl, IScoring {
     uint16[] public HISTORY_SCORE_WEIGHTS = [10_000, 10_000, 10_000, 20_000, 50_000];
 
     IERC20 public immutable GOIL_TOKEN;
+    ITreasury public immutable TREASURY;
     IVaultFactory public immutable VAULT_FACTORY;
 
     uint256 public thresholdCapital;
@@ -35,16 +38,18 @@ contract Scoring is AccessControl, IScoring {
     uint256 public marketConditionRatio;
 
     mapping(address => uint256[]) public scores;
+    mapping(address => uint256) public penalties;
     mapping(address => uint256) public totalFails;
 
-    modifier onlyVaultFactory() {
-        if (msg.sender != address(VAULT_FACTORY)) revert OnlyVaultFactory();
+    modifier onlyVault() {
+        if (!VAULT_FACTORY.getIsValidVault(msg.sender)) revert OnlyVaultFactory();
         _;
     }
 
     constructor(
         address _admin,
         address _vaultFactory,
+        address _treasury,
         address _goilToken,
         uint256 _thresholdCapital,
         uint256 _thresholdCollateral,
@@ -54,6 +59,7 @@ contract Scoring is AccessControl, IScoring {
     ) {
         if (!_isContract(_vaultFactory)) revert VaultFactoryMustBeContract();
         if (!_isContract(_goilToken)) revert GoilTokenMustBeContract();
+        if (!_isContract(_treasury)) revert TreasuryMustBeContract();
         if (_admin == address(0)) revert AdminCannotBeZeroAddress();
         if (_thresholdCapital == 0) revert ThresholdCapitalCannotBeZero();
         if (_thresholdCollateral == 0) revert ThresholdCollateralCannotBeZero();
@@ -63,6 +69,7 @@ contract Scoring is AccessControl, IScoring {
 
         VAULT_FACTORY = IVaultFactory(_vaultFactory);
         GOIL_TOKEN = IERC20(_goilToken);
+        TREASURY = ITreasury(_treasury);
         thresholdCapital = _thresholdCapital;
         thresholdCollateral = _thresholdCollateral;
         reputationRatio = _reputationRatio;
@@ -73,30 +80,36 @@ contract Scoring is AccessControl, IScoring {
         _grantRole(MANAGER_ROLE, _admin);
     }
 
-    function updateEntityScore(address _entity, uint256 _poolSize, bool _isFail) public onlyVaultFactory {
-        uint256[] memory entityScores = scores[_entity];
+    function updateEntityScore(address _vault, bool _isFailed) public onlyVault {
+        (address entity, , , , , ) = VAULT_FACTORY.vaults(_vault);
+        IVault vault = IVault(_vault);
+
+        if (_isFailed) {
+            uint256 entityFails = totalFails[entity] + 1;
+            uint256 penalty = (uint256(SCORE_PRECISION) ** (entityFails + 1)) / (EXP ** entityFails);
+
+            totalFails[entity] += 1;
+            penalties[entity] = penalty;
+
+            TREASURY.fundVault(_vault, vault.getInsufficientTokensAmount());
+        }
+        
+        uint256 poolSize = vault.totalAssets();
+        uint256[] memory entityScores = scores[entity];
         uint256 totalScores = entityScores.length;
 
-        if (totalScores == 0) {
-            uint256 initialScore = getInitialScore(_entity);
-            scores[_entity].push(initialScore);
-        }
-        if (_isFail) totalFails[_entity] += 1;
-
         uint256 lastScore = entityScores[totalScores - 1];
-        uint256 maxPoolSize = getMaxPoolSize(_entity);
-        uint256 historicalPerformance = getHistoricalPerformance(_entity);
-        uint256 penalty = getPenalty(_entity);
-        uint256 poolSizeRatio = (_poolSize * POOL_SIZE_WEIGHT) / maxPoolSize;
+        uint256 maxPoolSize = getMaxPoolSize(entity);
+        uint256 historicalPerformance = getHistoricalPerformance(entity);
+        uint256 poolSizeRatio = (poolSize * POOL_SIZE_WEIGHT) / maxPoolSize;
 
-        if (_poolSize > maxPoolSize) revert PoolSizeCannotBeGreaterThanMaxPoolSize();
-
-        uint256 newScore = lastScore + (poolSizeRatio * historicalPerformance * penalty) / (SCORE_PRECISION * SCORE_PRECISION);
+        uint256 baseScore = lastScore + (poolSizeRatio * historicalPerformance / SCORE_PRECISION);
+        uint256 newScore = baseScore * penalties[entity] / SCORE_PRECISION;
 
         if (newScore > MAX_RATIO) newScore = MAX_RATIO;
-        scores[_entity].push(newScore);
+        scores[entity].push(newScore);
 
-        emit EntityScoreUpdated(_entity, newScore);
+        emit EntityScoreUpdated(entity, newScore);
     }
 
     function getMaxPoolSize(address _entity) public view returns (uint256 maxPoolSize) {
@@ -104,22 +117,17 @@ contract Scoring is AccessControl, IScoring {
         maxPoolSize = (lastScore * thresholdCapital) / SCORE_PRECISION;
     }
 
-    function getInitialScore(address _entity) public view returns (uint256 score) {
-        uint256 entityTokenHoldings = GOIL_TOKEN.balanceOf(_entity); // TODO: mb it must be recorded when entity got license?
-        uint256 normalizedCollateralRatio = (entityTokenHoldings * MAX_RATIO) / thresholdCollateral;
-        if (normalizedCollateralRatio > MAX_RATIO) normalizedCollateralRatio = MAX_RATIO;
+    // function getInitialScore(address _entity) public view returns (uint256 score) {
+    //     uint256 entityTokenHoldings = GOIL_TOKEN.balanceOf(_entity); // TODO: mb it must be recorded when entity got license?
+    //     uint256 normalizedCollateralRatio = (entityTokenHoldings * MAX_RATIO) / thresholdCollateral;
+    //     if (normalizedCollateralRatio > MAX_RATIO) normalizedCollateralRatio = MAX_RATIO;
 
-        uint256 normalizedReputationRatio = reputationRatio * REPUTATION_WEIGHT / MAX_RATIO;
-        uint256 normalizedFinancialHealthRatio = financialHealthRatio * FINANCIAL_HEALTH_WEIGHT / MAX_RATIO;
-        uint256 normalizedMarketConditionRatio = marketConditionRatio * MARKET_CONDITION_WEIGHT / MAX_RATIO;
+    //     uint256 normalizedReputationRatio = reputationRatio * REPUTATION_WEIGHT / MAX_RATIO;
+    //     uint256 normalizedFinancialHealthRatio = financialHealthRatio * FINANCIAL_HEALTH_WEIGHT / MAX_RATIO;
+    //     uint256 normalizedMarketConditionRatio = marketConditionRatio * MARKET_CONDITION_WEIGHT / MAX_RATIO;
 
-        score = normalizedCollateralRatio + normalizedReputationRatio + normalizedFinancialHealthRatio + normalizedMarketConditionRatio;
-    }
-
-    function getPenalty(address _entity) public view returns (uint256 penalty) {
-        uint256 power = totalFails[_entity];
-        penalty = (uint256(SCORE_PRECISION) ** (power + 1)) / (EXP ** power);
-    }
+    //     score = normalizedCollateralRatio + normalizedReputationRatio + normalizedFinancialHealthRatio + normalizedMarketConditionRatio;
+    // }
 
     function getHistoricalPerformance(address _entity) public view returns (uint256 historicalPerformance) {
         uint256 accumulatedHistoricalScore;
@@ -155,22 +163,6 @@ contract Scoring is AccessControl, IScoring {
 
         thresholdCapital = _thresholdCapital;
         emit ThresholdCapitalUpdated(_thresholdCapital);
-    }
-
-    function setReputationRatio(uint256 _reputationRatio) external onlyRole(MANAGER_ROLE) {
-        if (_reputationRatio > MAX_RATIO || _reputationRatio == 0) revert InvalidReputationRatio();
-        if (reputationRatio == _reputationRatio) revert ReputationRatioCannotBeTheSame();
-
-        reputationRatio = _reputationRatio;
-        emit ReputationRatioUpdated(_reputationRatio);
-    }
-
-    function setFinancialHealthRatio(uint256 _financialHealthRatio) external onlyRole(MANAGER_ROLE) {
-        if (_financialHealthRatio > MAX_RATIO || _financialHealthRatio == 0) revert InvalidFinancialHealthRatio();
-        if (financialHealthRatio == _financialHealthRatio) revert FinancialHealthRatioCannotBeTheSame();
-
-        financialHealthRatio = _financialHealthRatio;
-        emit FinancialHealthRatioUpdated(_financialHealthRatio);
     }
 
     function setMarketConditionRatio(uint256 _marketConditionRatio) external onlyRole(MANAGER_ROLE) {
