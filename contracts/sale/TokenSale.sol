@@ -162,7 +162,22 @@ contract TokenSale is ITokenSale, Ownable, Pausable {
                 return i;
             }
         }
+
         return 0;
+    }
+
+    function getLastFinishedRoundId() external view returns (uint256) {
+        uint256 currentTime = block.timestamp;
+        uint256 lastFinishedRound = 0;
+        
+        for (uint256 i = 1; i <= rounds.length; i++) {
+            Round memory round = roundsById[i];
+            if (currentTime > round.endTime) {
+                lastFinishedRound = i;
+            }
+        }
+        
+        return lastFinishedRound;
     }
 
     function getPaymentAmountForTokens(uint256 _roundId, uint256 _tokenAmount) public view roundExists(_roundId) returns (uint256) {
