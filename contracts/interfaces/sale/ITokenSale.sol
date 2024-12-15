@@ -7,7 +7,6 @@ import {ITokenVesting} from "../vesting/ITokenVesting.sol";
 
 interface ITokenSale {
     struct Round {
-        address paymentToken;
         uint256 price;
         uint256 tokenAmount;
         uint256 soldAmount;
@@ -22,9 +21,12 @@ interface ITokenSale {
     struct Purchase {
         uint256 roundId;
         uint256 tokenAmount;
+        address paymentToken;
     }
 
     error IsNotContract(address _address);
+    error PoolForUSDTNotFound();
+    error PoolForWETHNotFound();
     error VestingContractIsNotSet();
     error VestingAlreadySet();
     error NoTokensToRound();
@@ -48,7 +50,6 @@ interface ITokenSale {
 
     event RoundCreated(
         uint256 indexed roundId,
-        address paymentToken,
         uint256 tokenAmount,
         uint256 price,
         uint256 startTime,
@@ -58,11 +59,13 @@ interface ITokenSale {
         address indexed buyer,
         uint256 indexed roundId,
         uint256 amount,
-        uint256 paymentAmount
+        address paymentToken
     );
     event VestingContractSet(address indexed vestingContract);
 
     function SALE_TOKEN() external view returns (IERC20);
+    function USDC_TOKEN() external view returns (IERC20);
+    function USDT_TOKEN() external view returns (IERC20);
     function WETH_TOKEN() external view returns (IWETH);
     function vestingContract() external view returns (address);
     function SALE_TOKEN_PRECISION() external view returns (uint256);
@@ -73,7 +76,6 @@ interface ITokenSale {
         external
         view
         returns (
-            address paymentToken,
             uint256 price,
             uint256 tokenAmount,
             uint256 soldAmount,
@@ -84,10 +86,9 @@ interface ITokenSale {
             uint256 vestingCliffPeriod,
             uint256 vestingSlicePeriod
         );
-    function userPurchases(address, uint256) external view returns (uint256 roundId, uint256 tokenAmount);
+    function userPurchases(address, uint256) external view returns (uint256 roundId, uint256 tokenAmount, address paymentToken);
 
     function createRound(
-        address _paymentToken,
         uint256 _price,
         uint256 _tokenAmount,
         uint256 _startTime,
@@ -101,7 +102,7 @@ interface ITokenSale {
     function setVestingContract(address _vestingContract) external;
 
 
-    function buyTokens(uint256 _roundId, uint256 _amount) external payable;
+    function buyTokens(uint256 _roundId, uint256 _amount, uint256 _transactionTimeout, uint24 _poolFee, address _paymentToken) external payable;
 
     function withdrawTokens(address _recipient, address _token, uint256 _amount) external;
     function withdrawAllTokens(address _token) external;
@@ -109,8 +110,11 @@ interface ITokenSale {
     function pause() external;
     function unpause() external;
 
-    function getPaymentAmountForTokens(uint256 _roundId, uint256 _tokenAmount) external view returns (uint256);
-    function getTokenAmountForPayment(uint256 _roundId, uint256 _paymentAmount) external view returns (uint256);
+    function getStableForTokens(uint256 _roundId, uint256 _tokenAmount) external view returns (uint256);
+    function getTokensForStable(uint256 _roundId, uint256 _stableAmount) external view returns (uint256);
+    function getNativeForTokens(uint256 _roundId, uint256 _tokenAmount) external view returns (uint256);
+    function getTokensForNative(uint256 _roundId, uint256 _nativeAmount) external view returns (uint256);
+    function getTotalEarnedForRound(uint256 _roundId) external view returns (uint256);
     function getUserPurchases(address _user) external view returns (Purchase[] memory);
     function getUserPurchasesCount(address _user) external view returns (uint256);
     function getAllRounds() external view returns (Round[] memory);
