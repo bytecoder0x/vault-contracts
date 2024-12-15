@@ -4,33 +4,32 @@ pragma solidity ^0.8.27;
 import {SafeERC20} from "@openzeppelin/contracts/token/ERC20/utils/SafeERC20.sol";
 import {Pausable} from "@openzeppelin/contracts/utils/Pausable.sol";
 import {Ownable} from "@openzeppelin/contracts/access/Ownable.sol";
-import {OracleLibrary} from "../libraries/OracleLibrary.sol";
 
 import {IERC20Metadata} from "@openzeppelin/contracts/token/ERC20/extensions/IERC20Metadata.sol";
 import {IERC20} from "@openzeppelin/contracts/token/ERC20/IERC20.sol";
-import {IUniswapV3Factory} from "@uniswap/v3-core/contracts/interfaces/IUniswapV3Factory.sol";
+import {IUniswapV2Router01} from "@uniswap/v2-periphery/contracts/interfaces/IUniswapV2Router01.sol";
 import {ISwapRouter} from "@uniswap/v3-periphery/contracts/interfaces/ISwapRouter.sol";
+import {IQuoterV2} from "@uniswap/v3-periphery/contracts/interfaces/IQuoterV2.sol";
 import {ITokenVesting} from "../interfaces/vesting/ITokenVesting.sol";
-import {IWETH} from "../interfaces/common/IWETH.sol";
 import {ITokenSale} from "../interfaces/sale/ITokenSale.sol";
+import {IWETH} from "../interfaces/common/IWETH.sol";
 
 contract TokenSale is ITokenSale, Ownable, Pausable {
     using SafeERC20 for IERC20;
 
-    uint24 public constant DEFAULT_POOL_FEE = 5_00; // 0.05%
-    uint256 public constant DEFAULT_TRANSACTION_TIMEOUT = 1000;
-
     uint256 public constant MAX_BIPS = 100_00;
-    uint256 public constant SLIPPAGE_MULTIPLIER = MAX_BIPS - 1_00; // 1%
-
+    uint256 public constant SLIPPAGE_MULTIPLIER = MAX_BIPS - 2_00; // 2%
+    uint256 public constant TRANSACTION_TIMEOUT = 15 minutes;
     uint32 public constant SECONDS_AGO = 2 hours;
 
     IERC20 public immutable SALE_TOKEN;
     IERC20 public immutable USDC_TOKEN;
     IERC20 public immutable USDT_TOKEN;
     IWETH public immutable WETH_TOKEN;
-    IUniswapV3Factory public immutable FACTORY_V3;
-    ISwapRouter public immutable SWAP_ROUTER;
+
+    ISwapRouter public immutable ROUTER_V3;
+    IUniswapV2Router01 public immutable ROUTER_V2;
+    IQuoterV2 public immutable QUOTER;
 
     uint256 public immutable SALE_TOKEN_PRECISION;
 
@@ -47,34 +46,27 @@ contract TokenSale is ITokenSale, Ownable, Pausable {
         address _usdcToken,
         address _usdtToken,
         address _wethToken,
-        address _factoryV3,
-        address _swapRouter,
+        address _routerV2,
+        address _routerV3,
+        address _quoter,
         address _owner
     ) Ownable(_owner) {
         if (!_isContract(_saleToken)) revert IsNotContract(_saleToken);
-        if (!_isContract(_factoryV3)) revert IsNotContract(_factoryV3);
-        if (!_isContract(_swapRouter)) revert IsNotContract(_swapRouter);
-
-        FACTORY_V3 = IUniswapV3Factory(_factoryV3);
-    
-        if (FACTORY_V3.getPool(_usdtToken, _usdcToken, DEFAULT_POOL_FEE) == address(0)) revert PoolForUSDTNotFound();
-        if (FACTORY_V3.getPool(_wethToken, _usdcToken, DEFAULT_POOL_FEE) == address(0)) revert PoolForWETHNotFound();
+        if (!_isContract(_routerV2)) revert IsNotContract(_routerV2);
+        if (!_isContract(_routerV3)) revert IsNotContract(_routerV3);
+        if (!_isContract(_quoter)) revert IsNotContract(_quoter);
 
         SALE_TOKEN = IERC20(_saleToken);
         USDC_TOKEN = IERC20(_usdcToken);
         USDT_TOKEN = IERC20(_usdtToken);
         WETH_TOKEN = IWETH(_wethToken);
-        SWAP_ROUTER = ISwapRouter(_swapRouter);
+        ROUTER_V2 = IUniswapV2Router01(_routerV2);
+        ROUTER_V3 = ISwapRouter(_routerV3);
         SALE_TOKEN_PRECISION = 10 ** IERC20Metadata(_saleToken).decimals();
     }
 
     modifier roundExists(uint256 _roundId) {
         if (_roundId == 0 || _roundId > rounds.length) revert InvalidRoundId();
-        _;
-    }
-    
-    modifier paymentTokenIsAllowed(address _paymentToken) {
-        if (_paymentToken != address(WETH_TOKEN) && _paymentToken != address(USDC_TOKEN) && _paymentToken != address(USDT_TOKEN)) revert InvalidPaymentToken();
         _;
     }
 
@@ -119,28 +111,19 @@ contract TokenSale is ITokenSale, Ownable, Pausable {
         emit RoundCreated(rounds.length, _tokenAmount, _price, _startTime, _endTime);
     }
 
-    // transactionTimeout & poolFee are optional parameters, it can be set to 0 then default values will be used
-    function buyTokens(
-        uint256 _roundId,
-        uint256 _amount,
-        uint256 _transactionTimeout,
-        uint24 _poolFee,
-        address _paymentToken
-    )
-        external
-        payable
-        whenNotPaused
-        roundExists(_roundId)
-        paymentTokenIsAllowed(_paymentToken)
-    {
+    function buyTokens(uint256 _roundId, uint256 _amount, address _paymentToken) external payable whenNotPaused roundExists(_roundId) {
         Round memory round = roundsById[_roundId];
+        uint256 currentTime = block.timestamp;
+
         if (_amount == 0) revert NoTokensToBuy();
-        if (block.timestamp < round.startTime || block.timestamp > round.endTime) revert RoundNotActive();
+        if (_paymentToken != address(WETH_TOKEN) && _paymentToken != address(USDC_TOKEN) && _paymentToken != address(USDT_TOKEN)) revert InvalidPaymentToken();
+        if (currentTime < round.startTime || currentTime > round.endTime) revert RoundNotActive();
         if (round.soldAmount + _amount > round.tokenAmount) revert InsufficientTokensInRound();
 
         uint256 paymentAmount = _amount * round.price / SALE_TOKEN_PRECISION;
         if (paymentAmount == 0) revert PaymentAmountIsZero();
         
+
         if (_paymentToken == address(WETH_TOKEN)) {
             paymentAmount = getNativeForTokens(_roundId, _amount);
             if (msg.value < paymentAmount) revert InsufficientEthSent();
@@ -151,10 +134,10 @@ contract TokenSale is ITokenSale, Ownable, Pausable {
             uint256 excess = WETH_TOKEN.balanceOf(address(this)) - (wethBalanceBefore + paymentAmount);
             if (excess > 0) WETH_TOKEN.transfer(msg.sender, excess);
 
-            _swap(_paymentToken, paymentAmount, _transactionTimeout, _poolFee);
+            _swap(_paymentToken, paymentAmount);
         } else if (_paymentToken == address(USDT_TOKEN)) {
             if (msg.value != 0) revert EthNotAllowedForErc20Purchase();
-            _swap(_paymentToken, paymentAmount, _transactionTimeout, _poolFee);
+            _swap(_paymentToken, paymentAmount);
         } else {
             if (msg.value != 0) revert EthNotAllowedForErc20Purchase();
             IERC20(_paymentToken).safeTransferFrom(msg.sender, address(this), paymentAmount);
@@ -236,22 +219,26 @@ contract TokenSale is ITokenSale, Ownable, Pausable {
 
     function getStableForTokens(uint256 _roundId, uint256 _tokenAmount) public view roundExists(_roundId) returns (uint256) {
         uint256 price = roundsById[_roundId].price;
-        return _tokenAmount * price / SALE_TOKEN_PRECISION;
+        uint256 stableAmount = _tokenAmount * price / SALE_TOKEN_PRECISION;
+        return stableAmount;
     }
 
     function getTokensForStable(uint256 _roundId, uint256 _stableAmount) public view roundExists(_roundId) returns (uint256) {
         uint256 price = roundsById[_roundId].price;
-        return _stableAmount * SALE_TOKEN_PRECISION / price;
+        uint256 tokenAmount = _stableAmount * SALE_TOKEN_PRECISION / price;
+        return tokenAmount;
     }
 
-    function getNativeForTokens(uint256 _roundId, uint256 _tokenAmount) public view roundExists(_roundId) returns (uint256) {
+    function getNativeForTokens(uint256 _roundId, uint256 _tokenAmount) public roundExists(_roundId) returns (uint256) {
         uint256 stableAmount = getStableForTokens(_roundId, _tokenAmount);
-        return getAmountOut(stableAmount, DEFAULT_POOL_FEE, address(USDT_TOKEN), address(WETH_TOKEN));
+        (, , uint256 nativeAmount) = _decider(stableAmount, address(USDT_TOKEN), address(WETH_TOKEN));
+        return nativeAmount;
     }
 
-    function getTokensForNative(uint256 _roundId, uint256 _nativeAmount) public view roundExists(_roundId) returns (uint256) {
-        uint256 stableAmount = getAmountOut(_nativeAmount, DEFAULT_POOL_FEE, address(WETH_TOKEN), address(USDT_TOKEN));
-        return getTokensForStable(_roundId, stableAmount);
+    function getTokensForNative(uint256 _roundId, uint256 _nativeAmount) public roundExists(_roundId) returns (uint256) {
+        (, , uint256 stableAmount) = _decider(_nativeAmount, address(WETH_TOKEN), address(USDT_TOKEN));
+        uint256 tokenAmount = getTokensForStable(_roundId, stableAmount);
+        return tokenAmount;
     }
 
     function getTotalEarnedForRound(uint256 _roundId) public view roundExists(_roundId) returns (uint256) {
@@ -275,33 +262,105 @@ contract TokenSale is ITokenSale, Ownable, Pausable {
         return rounds.length;
     }
 
-    function getAmountOut(uint256 _amountIn, uint24 _fee, address _tokenIn, address _tokenOut) public view returns (uint256 amountOut) {
-        uint24 fee = _fee != 0 ? _fee : DEFAULT_POOL_FEE;
-        address pool = FACTORY_V3.getPool(_tokenIn, _tokenOut, fee);
+    function _swap(address _tokenIn, uint256 _amountIn) private returns (uint256 amountOut) {
+        address tokenOut = address(USDC_TOKEN);
+        (Swap decision, uint24 fee, uint256 maxAmount) = _decider(_amountIn, _tokenIn, tokenOut);
 
-        int24 tick = OracleLibrary.consult(pool, SECONDS_AGO);
-        amountOut = OracleLibrary.getQuoteAtTick(tick, uint128(_amountIn), _tokenIn, _tokenOut);
+        if (decision == Swap.V2) {
+            address[] memory path = new address[](2);
+            path[0] = _tokenIn;
+            path[1] = tokenOut;
+
+            amountOut = _swapV2(path, _amountIn, maxAmount);
+        } else {
+            amountOut = _swapV3(_tokenIn, fee, _amountIn, maxAmount);
+        }
     }
 
-    function _swap(address _tokenIn, uint256 _amountIn, uint256 _transactionTimeout, uint24 _fee) private returns (uint256 amountOut) {
-        uint256 transactionTimeout = _transactionTimeout != 0 ? _transactionTimeout : DEFAULT_TRANSACTION_TIMEOUT;
-        uint24 fee = _fee != 0 ? _fee : DEFAULT_POOL_FEE;
+    function _decider(uint256 _amountIn, address _tokenIn, address _tokenOut) private returns (Swap, uint24, uint256) {
+        uint256 amount1 = _getQuote(_tokenIn, _tokenOut, _amountIn, 5_00); //fee 0.05%
+        uint256 amount2 = _getQuote(_tokenIn, _tokenOut, _amountIn, 3_000); //fee 0.3%
+        uint256 amount3;
 
-        uint256 amountOutMinimum = getAmountOut(_amountIn, fee, _tokenIn, address(USDC_TOKEN)) * SLIPPAGE_MULTIPLIER / MAX_BIPS;
+        address[] memory path = new address[](2);
+        path[0] = _tokenIn;
+        path[1] = _tokenOut;
 
-        IERC20(_tokenIn).approve(address(SWAP_ROUTER), _amountIn);
+        try ROUTER_V2.getAmountsOut(_amountIn, path) returns (uint256[] memory result) {
+            amount3 = result[1];
+        } catch {
+            amount3 = 0;
+        }
+
+        uint256 maxAmount = amount1;
+        uint24 fee = 5_00;
+        Swap decision = Swap.V3_500;
+
+        if (amount2 > maxAmount) {
+            maxAmount = amount2;
+            decision = Swap.V3_3000;
+            fee = 30_00;
+        }
+
+        if (amount3 > maxAmount) {
+            maxAmount = amount3;
+            decision = Swap.V2;
+            fee = 0;
+        }
+
+        return (decision, fee, maxAmount);
+    }
+
+    function _getQuote(
+        address _tokenIn,
+        address _tokenOut,
+        uint256 _amountIn,
+        uint24 _fee
+    ) private returns (uint256) {
+        uint256 amountOut;
+
+        IQuoterV2.QuoteExactInputSingleParams memory params = IQuoterV2
+            .QuoteExactInputSingleParams({
+                tokenIn: _tokenIn,
+                tokenOut: _tokenOut,
+                amountIn: _amountIn,
+                fee: _fee,
+                sqrtPriceLimitX96: 0
+            });
+
+        try QUOTER.quoteExactInputSingle(params) returns (uint256 out, uint160 , uint32, uint256) {
+            amountOut = out;
+        } catch {
+            amountOut = 0;
+        }
+
+        return amountOut;
+    }
+
+    function _swapV2(address[] memory _path, uint256 _amountIn, uint256 _amountOut) private returns (uint256 amountOut) {
+        uint256 amountOutMin = _amountOut * SLIPPAGE_MULTIPLIER / MAX_BIPS;
+        uint256 deadline = block.timestamp + TRANSACTION_TIMEOUT;
+
+        uint256[] memory amounts = ROUTER_V2.swapExactTokensForTokens(_amountIn, amountOutMin, _path, address(this), deadline);
+        return amounts[amounts.length - 1];
+    }
+
+    function _swapV3(address _tokenIn, uint24 _fee, uint256 _amountIn, uint256 _amountOut) private returns (uint256 amountOut) {
+        uint256 amountOutMin = _amountOut * SLIPPAGE_MULTIPLIER / MAX_BIPS;
+        uint256 deadline = block.timestamp + TRANSACTION_TIMEOUT;
+
         ISwapRouter.ExactInputSingleParams memory params = ISwapRouter.ExactInputSingleParams({
             tokenIn: _tokenIn,
-            tokenOut: address(USDT_TOKEN),
-            fee: fee,
+            tokenOut: address(USDC_TOKEN),
+            fee: _fee,
             recipient: address(this),
-            deadline: block.timestamp + transactionTimeout,
+            deadline: deadline,
             amountIn: _amountIn,
-            amountOutMinimum: amountOutMinimum,
-            sqrtPriceLimitX96: 0
+            amountOutMinimum: amountOutMin,
+            sqrtPriceLimitX96: 0 
         });
 
-        amountOut = SWAP_ROUTER.exactInputSingle(params);
+        amountOut = ROUTER_V3.exactInputSingle(params);
     }
 
     function _isContract(address _address) private view returns (bool) {

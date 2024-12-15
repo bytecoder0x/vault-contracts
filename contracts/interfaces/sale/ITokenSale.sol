@@ -6,6 +6,12 @@ import {IWETH} from "../common/IWETH.sol";
 import {ITokenVesting} from "../vesting/ITokenVesting.sol";
 
 interface ITokenSale {
+    enum Swap {
+        V2,
+        V3_500,
+        V3_3000
+    }
+
     struct Round {
         uint256 price;
         uint256 tokenAmount;
@@ -102,21 +108,21 @@ interface ITokenSale {
     function setVestingContract(address _vestingContract) external;
 
 
-    function buyTokens(uint256 _roundId, uint256 _amount, uint256 _transactionTimeout, uint24 _poolFee, address _paymentToken) external payable;
+    // function buyTokens(uint256 _roundId, uint256 _amount, address _paymentToken) external payable;
 
-    function withdrawTokens(address _recipient, address _token, uint256 _amount) external;
-    function withdrawAllTokens(address _token) external;
+    // function withdrawTokens(address _recipient, address _token, uint256 _amount) external;
+    // function withdrawAllTokens(address _token) external;
 
-    function pause() external;
-    function unpause() external;
+    // function pause() external;
+    // function unpause() external;
 
-    function getStableForTokens(uint256 _roundId, uint256 _tokenAmount) external view returns (uint256);
-    function getTokensForStable(uint256 _roundId, uint256 _stableAmount) external view returns (uint256);
-    function getNativeForTokens(uint256 _roundId, uint256 _tokenAmount) external view returns (uint256);
-    function getTokensForNative(uint256 _roundId, uint256 _nativeAmount) external view returns (uint256);
-    function getTotalEarnedForRound(uint256 _roundId) external view returns (uint256);
-    function getUserPurchases(address _user) external view returns (Purchase[] memory);
-    function getUserPurchasesCount(address _user) external view returns (uint256);
-    function getAllRounds() external view returns (Round[] memory);
-    function getRoundsCount() external view returns (uint256);
+    // function getStableForTokens(uint256 _roundId, uint256 _tokenAmount) external view returns (uint256);
+    // function getTokensForStable(uint256 _roundId, uint256 _stableAmount) external view returns (uint256);
+    // function getNativeForTokens(uint256 _roundId, uint256 _tokenAmount) external view returns (uint256);
+    // function getTokensForNative(uint256 _roundId, uint256 _nativeAmount) external view returns (uint256);
+    // function getTotalEarnedForRound(uint256 _roundId) external view returns (uint256);
+    // function getUserPurchases(address _user) external view returns (Purchase[] memory);
+    // function getUserPurchasesCount(address _user) external view returns (uint256);
+    // function getAllRounds() external view returns (Round[] memory);
+    // function getRoundsCount() external view returns (uint256);
 }
