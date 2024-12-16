@@ -108,7 +108,7 @@ contract TokenSale is ITokenSale, Ownable, Pausable {
         if (currentTime < round.startTime || currentTime > round.endTime) revert RoundNotActive();
         if (round.soldAmount + _amount > round.tokenAmount) revert InsufficientTokensInRound();
 
-        uint256 paymentAmount = getPaymentForTokens(_roundId, _amount, _paymentToken);
+        uint256 paymentAmount = getPaymentAmountForTokens(_roundId, _amount, _paymentToken);
         if (paymentAmount == 0) revert PaymentAmountIsZero();
 
         if (_paymentToken == address(WETH_TOKEN)) {
@@ -199,13 +199,13 @@ contract TokenSale is ITokenSale, Ownable, Pausable {
         return lastFinishedRound;
     }
 
-    function getPaymentForTokens(uint256 _roundId, uint256 _tokenAmount, address _paymentToken) public view roundExists(_roundId) returns (uint256) {
+    function getPaymentAmountForTokens(uint256 _roundId, uint256 _tokenAmount, address _paymentToken) public view roundExists(_roundId) returns (uint256) {
         Round memory round = roundsById[_roundId];  
         uint256 price = _paymentToken == address(WETH_TOKEN) ? getPricePerTokenInNative(_roundId) : round.price;
         return _tokenAmount * price / SALE_TOKEN_PRECISION;
     }
 
-    function getTokensForPayment(uint256 _roundId, uint256 _paymentAmount, address _paymentToken) public view roundExists(_roundId) returns (uint256) {
+    function getTokenAmountForPayment(uint256 _roundId, uint256 _paymentAmount, address _paymentToken) public view roundExists(_roundId) returns (uint256) {
         Round memory round = roundsById[_roundId];
         uint256 price = _paymentToken == address(WETH_TOKEN) ? getPricePerTokenInNative(_roundId) : round.price;
         return _paymentAmount * SALE_TOKEN_PRECISION / price;
@@ -217,8 +217,8 @@ contract TokenSale is ITokenSale, Ownable, Pausable {
         if (priceETH < 0) revert InvalidPrice();
 
         uint256 stablePrecision = 10 ** IERC20Metadata(address(USDC_TOKEN)).decimals();
-        uint256 formatedPriceETH = uint256(priceETH) * stablePrecision / 10e8;
-        uint256 pricePerToken = priceInStable * 1e18 / formatedPriceETH;
+        uint256 formatedPriceETH = uint256(priceETH) * stablePrecision / 10 ** PRICE_FEED.decimals();
+        uint256 pricePerToken = priceInStable * 10 ** 18 / formatedPriceETH;
         
         return pricePerToken;
     }

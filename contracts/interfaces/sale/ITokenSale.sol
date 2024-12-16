@@ -99,8 +99,8 @@ interface ITokenSale {
     function pause() external;
     function unpause() external;
 
-    function getPaymentForTokens(uint256 _roundId, uint256 _tokenAmount, address _paymentToken) external view returns (uint256);
-    function getTokensForPayment(uint256 _roundId, uint256 _paymentAmount, address _paymentToken) external view returns (uint256);
+    function getPaymentAmountForTokens(uint256 _roundId, uint256 _tokenAmount, address _paymentToken) external view returns (uint256);
+    function getTokenAmountForPayment(uint256 _roundId, uint256 _paymentAmount, address _paymentToken) external view returns (uint256);
     function getTotalEarnedForRound(uint256 _roundId) external view returns (uint256);
     function getUserPurchases(address _user) external view returns (Purchase[] memory);
     function getUserPurchasesCount(address _user) external view returns (uint256);
