@@ -28,6 +28,7 @@ interface IVault is IERC4626Upgradeable {
     function startTime() external view returns (uint256);
     function fundingEndTime() external view returns (uint256);
     function unlockEndTime() external view returns (uint256);
+    function owner() external view returns (address);
 
     function initialize(
         address _entity,

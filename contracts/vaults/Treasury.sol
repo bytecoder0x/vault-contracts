@@ -19,6 +19,7 @@ contract Treasury is AccessControl, ITreasury {
     address public immutable STAKING;
 
     mapping(address => uint256) public collateralDeposited;
+    mapping(address => uint256) public unlockedCollateral;
 
     modifier onlyScoring() {
         if (msg.sender != SCORING) revert OnlyScoringAllowed();
@@ -59,13 +60,29 @@ contract Treasury is AccessControl, ITreasury {
 
     function withdrawCollateral(uint256 _amount) external {
         if (_amount == 0) revert ZeroAmountToWithdraw();
-        if (LICENSE.getLicenseIsActive(msg.sender)) revert CannotWithdrawDuringActiveLicense();
-        if (collateralDeposited[msg.sender] < _amount) revert InsufficientCollateral();
 
-        collateralDeposited[msg.sender] -= _amount;
-        GOIL_TOKEN.transfer(msg.sender, _amount);
+        address entity = msg.sender;
+        uint256 withdrawableCollateral;
 
-        emit CollateralWithdrawn(msg.sender, _amount);
+        if (LICENSE.getLicenseIsActive(entity)) {
+            if (unlockedCollateral[entity] < _amount) revert InsufficientCollateral();
+            unlockedCollateral[entity] -= _amount;
+        }
+
+        if (collateralDeposited[entity] < _amount) revert InsufficientCollateral();
+
+        collateralDeposited[entity] -= _amount;
+        withdrawableCollateral = _amount;
+        GOIL_TOKEN.transfer(msg.sender, withdrawableCollateral);
+
+        emit CollateralWithdrawn(msg.sender, withdrawableCollateral);
+    }
+
+    function unlockCollateral(address _entity, uint256 _amount) external onlyScoring {
+        if (_amount == 0) revert ZeroAmountToUnlockCollateral();
+
+        unlockedCollateral[_entity] += _amount;
+        emit CollateralUnlocked(_entity, _amount);
     }
 
     function fundVault(address _vault, uint256 _amount) external onlyScoring {

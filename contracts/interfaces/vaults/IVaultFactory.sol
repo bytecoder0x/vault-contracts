@@ -43,6 +43,15 @@ interface IVaultFactory {
     function SCORING() external view returns (IScoring);
     function MAX_BIPS() external view returns (uint256);
     function COLLATERAL_PERCENTAGE() external view returns (uint256);
+    function vaults(address vault) external view returns (
+        address entity,
+        uint256 interestRate,
+        uint256 desiredCap,
+        uint256 startTime,
+        uint256 fundingEndTime,
+        uint256 unlockEndTime,
+        uint256 collateralAmount
+    );
 
     function createVault(
         uint256 _interestRate,

@@ -118,6 +118,10 @@ contract Vault is Initializable, ERC4626Upgradeable, OwnableUpgradeable, IVault 
         emit WithdrawToEntity(totalAssets());
     }
 
+    function owner() public view override(IVault, OwnableUpgradeable) returns (address) {
+        return super.owner();
+    }
+
     function _isContract(address _address) private view returns (bool) {
         uint32 size;
         assembly {

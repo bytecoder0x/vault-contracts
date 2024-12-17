@@ -93,7 +93,10 @@ contract Scoring is AccessControl, IScoring {
             totalFails[entity] += 1;
             penalties[entity] = penalty;
         
-            TREASURY.fundVault(address(vault), vault.promisedCap());
+            TREASURY.fundVault(address(vault), vault.desiredCap());
+        }  else {
+            (, , , , , , uint256 collateralAmount) = VAULT_FACTORY.vaults(address(vault));
+            TREASURY.unlockCollateral(entity, collateralAmount);
         }
         
         uint256 poolSize = vault.desiredCap();
