@@ -48,13 +48,13 @@ contract Treasury is AccessControl, ITreasury {
         _grantRole(MANAGER_ROLE, _admin);
     }
 
-    function depositCollateral(uint256 _amount) external {
+    function depositCollateral(address _entity, uint256 _amount) public {
         if (_amount == 0) revert ZeroAmountToDeposit();
 
-        collateralDeposited[msg.sender] += _amount;
+        collateralDeposited[_entity] += _amount;
         GOIL_TOKEN.transferFrom(msg.sender, address(this), _amount);
 
-        emit CollateralDeposited(msg.sender, _amount);
+        emit CollateralDeposited(msg.sender, _entity, _amount);
     }
 
     function withdrawCollateral(uint256 _amount) external {
