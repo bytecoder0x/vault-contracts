@@ -72,13 +72,13 @@ contract Treasury is AccessControl, ITreasury {
         if (!VAULT_FACTORY.getIsValidVault(_vault)) revert VaultIsNotValid();
         if (_amount == 0) revert ZeroAmountToFundVault();
 
-        (address owner, , , , , ) = VAULT_FACTORY.vaults(_vault);
-        uint256 collateralAmountByOwner = collateralDeposited[owner];
+        address entity = VAULT_FACTORY.getVaultEntity(_vault);
+        uint256 collateralAmountByOwner = collateralDeposited[entity];
 
         if (collateralAmountByOwner < _amount) {
-            collateralDeposited[owner] = 0;
+            collateralDeposited[entity] = 0;
         } else {
-            collateralDeposited[owner] -= _amount;
+            collateralDeposited[entity] -= _amount;
         }
 
         GOIL_TOKEN.transfer(_vault, _amount);
