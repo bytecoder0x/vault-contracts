@@ -48,19 +48,8 @@ interface ITokenSale {
     error VestingCliffAndSlicePeriodTooLong();
     error RoundStartTimeBeforePreviousRoundEndTime();
 
-    event RoundCreated(
-        uint256 indexed roundId,
-        uint256 tokenAmount,
-        uint256 price,
-        uint256 startTime,
-        uint256 endTime
-    );
-    event TokensPurchased(
-        address indexed buyer,
-        uint256 indexed roundId,
-        uint256 amount,
-        address paymentToken
-    );
+    event RoundCreated(uint256 indexed roundId, Round round);
+    event TokensPurchased(address indexed buyer, uint256 indexed roundId, uint256 amount, address paymentToken);
     event VestingContractSet(address indexed vestingContract);
 
     function SALE_TOKEN() external view returns (IERC20);
@@ -102,7 +91,7 @@ interface ITokenSale {
     function setVestingContract(address _vestingContract) external;
 
 
-    function buyTokens(uint256 _roundId, uint256 _amount, uint256 _transactionTimeout, uint24 _poolFee, address _paymentToken) external payable;
+    function buyTokens(uint256 _roundId, uint256 _amount, address _paymentToken) external payable;
 
     function withdrawTokens(address _recipient, address _token, uint256 _amount) external;
     function withdrawAllTokens(address _token) external;
@@ -110,10 +99,8 @@ interface ITokenSale {
     function pause() external;
     function unpause() external;
 
-    function getStableForTokens(uint256 _roundId, uint256 _tokenAmount) external view returns (uint256);
-    function getTokensForStable(uint256 _roundId, uint256 _stableAmount) external view returns (uint256);
-    function getNativeForTokens(uint256 _roundId, uint256 _tokenAmount) external view returns (uint256);
-    function getTokensForNative(uint256 _roundId, uint256 _nativeAmount) external view returns (uint256);
+    function getPaymentAmountForTokens(uint256 _roundId, uint256 _tokenAmount, address _paymentToken) external view returns (uint256);
+    function getTokenAmountForPayment(uint256 _roundId, uint256 _paymentAmount, address _paymentToken) external view returns (uint256);
     function getTotalEarnedForRound(uint256 _roundId) external view returns (uint256);
     function getUserPurchases(address _user) external view returns (Purchase[] memory);
     function getUserPurchasesCount(address _user) external view returns (uint256);
