@@ -2,12 +2,18 @@
 pragma solidity ^0.8.27;
 
 interface IScoring {
-    // Errors
+    struct PerformanceData {
+        uint256 reputationRatio;
+        uint256 financialHealthRatio;
+    }
+
     error AdminCannotBeZeroAddress();
     error ThresholdCapitalCannotBeZero();
     error ThresholdCollateralCannotBeZero();
+    error TreasuryMustBeContract();
     error VaultFactoryMustBeContract();
     error GoilTokenMustBeContract();
+    error LicenseMustBeContract();
     error InvalidReputationRatio();
     error InvalidFinancialHealthRatio();
     error InvalidMarketConditionRatio();
@@ -17,24 +23,24 @@ interface IScoring {
     error FinancialHealthRatioCannotBeTheSame();
     error MarketConditionRatioCannotBeTheSame();
     error PoolSizeCannotBeGreaterThanMaxPoolSize();
+    error EntityCannotBeZeroAddress();
+    error PerformanceDataAlreadySet();
+    error LicenseIsNotPending();
     error IncorrectWeights();
     error OnlyVaultFactory();
+    error OnlyAdminOrLicense();
 
     event ThresholdCapitalUpdated(uint256 indexed thresholdCapital);
     event ThresholdCollateralUpdated(uint256 indexed thresholdCollateral);
-    event ReputationRatioUpdated(uint256 indexed reputationRatio);
-    event FinancialHealthRatioUpdated(uint256 indexed financialHealthRatio);
     event MarketConditionRatioUpdated(uint256 indexed marketConditionRatio);
-    event EntityScoreUpdated(address indexed entity, uint256 indexed newScore);
+    event EntityScoreUpdated(address indexed entity, uint256 newScore);
+    event PerformanceDataUpdated(address indexed entity, uint256 reputationRatio, uint256 financialHealthRatio);
 
-    function updateEntityScore(address _entity, uint256 _poolSize, bool _isFail) external;
-    function getMaxPoolSize(address _entity) external view returns (uint256 maxPoolSize);
-    function getInitialScore(address _entity) external view returns (uint256 score);
-    function getPenalty(address _entity) external view returns (uint256 penalty);
-    function getHistoricalPerformance(address _entity) external view returns (uint256 historicalPerformance);
+    function updateEntityScore() external;
+    function setInitialScore(address _entity) external;
     function setThresholdCollateral(uint256 _thresholdCollateral) external;
     function setThresholdCapital(uint256 _thresholdCapital) external;
-    function setReputationRatio(uint256 _reputationRatio) external;
-    function setFinancialHealthRatio(uint256 _financialHealthRatio) external;
     function setMarketConditionRatio(uint256 _marketConditionRatio) external;
+    function getIsPerformanceDataSet(address _entity) external view returns (bool);
+    function getMaxPoolSize(address _entity) external view returns (uint256 maxPoolSize);
 }
