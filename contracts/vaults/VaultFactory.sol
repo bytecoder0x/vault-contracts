@@ -5,47 +5,39 @@ import {Clones} from "@openzeppelin/contracts/proxy/Clones.sol";
 import {Ownable} from "@openzeppelin/contracts/access/Ownable.sol";
 import {Vault} from "./Vault.sol";
 
-contract VaultFactory is Ownable {
+import {IVaultFactory} from "../interfaces/vaults/IVaultFactory.sol";
+import {ITreasury} from "../interfaces/vaults/ITreasury.sol";
+import {IScoring} from "../interfaces/vaults/IScoring.sol";
+import {IOracle} from "../interfaces/vaults/IOracle.sol";
+
+contract VaultFactory is Ownable, IVaultFactory {
     using Clones for address;
 
-    error ScoringContractAlreadySet();
-    error ScoringContractNotSet();
-    error TreasuryContractCannotBeZeroAddress();
-    error TreasuryContractAlreadySet();
-    error TreasuryContractNotSet();
-    error ScoringContractMustBeContract();
-    error TreasuryContractMustBeContract();
+    uint256 public constant MAX_BIPS = 100_00;
+    uint256 public constant COLLATERAL_PERCENTAGE = 10_00;
 
-    event ScoringContractSet(address indexed scoringContract);
-    event TreasuryContractSet(address indexed treasuryContract);
-
-    struct VaultInfo {
-        address entity;
-        uint256 interestRate;
-        uint256 desiredCap;
-        uint256 startTime;
-        uint256 fundingEndTime;
-        uint256 unlockEndTime;
-    }
-
+    IOracle public immutable ORACLE;
     address public immutable DEPOSIT_TOKEN;
     address public immutable VAULT_IMPLEMENTATION;
 
-    address public treasuryContract;
-    address public scoringContract;
+    ITreasury public TREASURY;
+    IScoring public SCORING;
 
     VaultInfo[] public allVaults;
     mapping(address => VaultInfo) public vaults;
 
-    event VaultCreated(address indexed vault, address indexed owner);
 
     modifier withSetupScoringAndTreasuryContracts() {
-        if (scoringContract == address(0)) revert ScoringContractNotSet();
-        if (treasuryContract == address(0)) revert TreasuryContractNotSet();
+        if (address(SCORING) == address(0)) revert ScoringContractNotSet();
+        if (address(TREASURY) == address(0)) revert TreasuryContractNotSet();
         _;
     }
 
-    constructor(address _owner, address _depositToken) Ownable(_owner) {
+    constructor(address _owner, address _depositToken, address _oracle) Ownable(_owner) {
+        if (!_isContract(_oracle)) revert OracleMustBeContract();
+        if (!_isContract(_depositToken)) revert DepositTokenMustBeContract();
+
+        ORACLE = IOracle(_oracle);
         DEPOSIT_TOKEN = _depositToken;
         VAULT_IMPLEMENTATION = address(new Vault());
     }
@@ -60,14 +52,30 @@ contract VaultFactory is Ownable {
         uint256 fundingEndTime = _startTime + _fundingPeriod;
         uint256 unlockEndTime = _startTime + _unlockPeriod;
 
+        if (_desiredCap == 0) revert DesiredCapCannotBeZero();
+        if (_interestRate == 0) revert InterestRateCannotBeZero();
+        if (_startTime <= block.timestamp) revert StartTimeMustBeInFuture();
+        if (fundingEndTime <= _startTime) revert StartTimeMustBeBeforeFundingEndTime();
+        if (unlockEndTime <= fundingEndTime) revert FundingEndTimeMustBeBeforeUnlockEndTime();
+
+        uint256 maxAllowedPoolSize = SCORING.getMaxPoolSize(msg.sender);
+        uint256 promisedCap = _desiredCap * (MAX_BIPS + _interestRate) / MAX_BIPS;
+        
+        if (_desiredCap > maxAllowedPoolSize) revert NooAllowedPoolSize();
+
+        uint256 collateralInStable = _desiredCap * COLLATERAL_PERCENTAGE / MAX_BIPS;
+        uint256 collateralInGoil = ORACLE.getTokensForPurchasePrice(collateralInStable);
+        TREASURY.depositCollateral(msg.sender, collateralInGoil);
+
         Vault vault = Vault(VAULT_IMPLEMENTATION.clone());
         vault.initialize(
             msg.sender,
-            scoringContract,
-            treasuryContract,
+            address(SCORING),
+            address(TREASURY),
             DEPOSIT_TOKEN,
             _interestRate,
             _desiredCap,
+            promisedCap,
             _startTime,
             fundingEndTime,
             unlockEndTime
@@ -79,17 +87,38 @@ contract VaultFactory is Ownable {
             desiredCap: _desiredCap,
             startTime: _startTime,
             fundingEndTime: fundingEndTime,
-            unlockEndTime: unlockEndTime
+            unlockEndTime: unlockEndTime,
+            collateralAmount: collateralInGoil
         });
 
         allVaults.push(newVault);
         vaults[address(vault)] = newVault;
 
-        emit VaultCreated(address(vault), msg.sender);
+        emit VaultCreated(address(vault), msg.sender, newVault);
+    }
+
+    function setScoringContract(address _scoringContract) public onlyOwner {
+        if (!_isContract(_scoringContract)) revert ScoringContractMustBeContract();
+        if (address(SCORING) != address(0)) revert ScoringContractAlreadySet();
+
+        SCORING = IScoring(_scoringContract);
+        emit ScoringContractSet(_scoringContract);
+    }
+
+    function setTreasuryContract(address _treasuryContract) public onlyOwner {
+        if (!_isContract(_treasuryContract)) revert TreasuryContractMustBeContract();
+        if (address(TREASURY) != address(0)) revert TreasuryContractAlreadySet();
+
+        TREASURY = ITreasury(_treasuryContract);
+        emit TreasuryContractSet(_treasuryContract);
     }
 
     function getIsValidVault(address _vault) public view returns (bool) {
         return vaults[_vault].entity != address(0);
+    }
+
+    function getVaultEntity(address _vault) public view returns (address) {
+        return vaults[_vault].entity;
     }
 
     function getAllVaults() public view returns (VaultInfo[] memory) {
@@ -98,22 +127,6 @@ contract VaultFactory is Ownable {
 
     function getVaultsCount() public view returns (uint256) {
         return allVaults.length;
-    }
-
-    function setScoringContract(address _scoringContract) public onlyOwner {
-        if (!_isContract(_scoringContract)) revert ScoringContractMustBeContract();
-        if (scoringContract != address(0)) revert ScoringContractAlreadySet();
-
-        scoringContract = _scoringContract;
-        emit ScoringContractSet(_scoringContract);
-    }
-
-    function setTreasuryContract(address _treasuryContract) public onlyOwner {
-        if (!_isContract(_treasuryContract)) revert TreasuryContractMustBeContract();
-        if (treasuryContract != address(0)) revert TreasuryContractAlreadySet();
-
-        treasuryContract = _treasuryContract;
-        emit TreasuryContractSet(_treasuryContract);
     }
 
     function _isContract(address _address) private view returns (bool) {

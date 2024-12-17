@@ -8,31 +8,10 @@ import {Initializable} from "@openzeppelin/contracts-upgradeable/proxy/utils/Ini
 import {SafeERC20Upgradeable} from "@openzeppelin/contracts-upgradeable/token/ERC20/utils/SafeERC20Upgradeable.sol";
 import {IERC20Upgradeable} from "@openzeppelin/contracts-upgradeable/token/ERC20/IERC20Upgradeable.sol";
 import {IScoring} from "../interfaces/vaults/IScoring.sol";
+import {IVault} from "../interfaces/vaults/IVault.sol";
 
-contract Vault is Initializable, ERC4626Upgradeable, OwnableUpgradeable {
+contract Vault is Initializable, ERC4626Upgradeable, OwnableUpgradeable, IVault {
     using SafeERC20Upgradeable for IERC20Upgradeable;
-
-    error DesiredCapCannotBeZero();
-    error InterestRateCannotBeZero();
-    error StartTimeMustBeInFuture();
-    error WithdrawMoreThanMax();
-    error VaultNotStarted();
-    error VaultFundingTimeIsEnded();
-    error VaultNotExpired();
-    error ExceedsVaultSize();
-    error InsufficientBalance();
-    error FundingEndTimeMustBeBeforeUnlockEndTime();
-    error StartTimeMustBeBeforeFundingEndTime();
-    error ScoringContractMustBeContract();
-    error DepositTokenMustBeContract();
-    error GoilTokenMustBeContract();
-    error AmountToDepositCannotBeZero();
-    error AmountToWithdrawCannotBeZero();
-    error FundingEndTimeIsNotReached();
-    error VaultIsNotUnlocked();
-    error VaultIsNotFailed();
-
-    uint256 public constant MAX_BIPS = 100_00;
 
     IScoring public SCORING;
     IERC20Upgradeable public GOIL_TOKEN;
@@ -48,9 +27,6 @@ contract Vault is Initializable, ERC4626Upgradeable, OwnableUpgradeable {
     uint256 public unlockEndTime;
     uint256 public totalDeposits;
 
-    event DepositFromEntity(uint256 amount);
-    event WithdrawToEntity(uint256 amount);
-
     function initialize(
         address _entity,
         address _scoring,
@@ -58,25 +34,11 @@ contract Vault is Initializable, ERC4626Upgradeable, OwnableUpgradeable {
         address _goilToken,
         uint256 _interestRate, 
         uint256 _desiredCap,
+        uint256 _promisedCap,
         uint256 _startTime,
         uint256 _fundingEndTime,
         uint256 _unlockEndTime
     ) external initializer {
-        if (!_isContract(_scoring)) revert ScoringContractMustBeContract();
-        if (!_isContract(_depositToken)) revert DepositTokenMustBeContract();
-        if (!_isContract(_goilToken)) revert GoilTokenMustBeContract();
-        if (_desiredCap == 0) revert DesiredCapCannotBeZero();
-        if (_interestRate == 0) revert InterestRateCannotBeZero();
-        if (_startTime <= block.timestamp) revert StartTimeMustBeInFuture();
-        if (_fundingEndTime <= _startTime) revert StartTimeMustBeBeforeFundingEndTime();
-        if (_unlockEndTime <= _fundingEndTime) revert FundingEndTimeMustBeBeforeUnlockEndTime();
-
-        uint256 maxPoolSize = IScoring(_scoring).getMaxPoolSize(_entity);
-        uint256 unlockPeriod = _unlockEndTime - _fundingEndTime;
-        uint256 _promisedCap = _desiredCap + interestRate * unlockPeriod / MAX_BIPS;
-        
-        if (_desiredCap > maxPoolSize || promisedCap > maxPoolSize) revert ExceedsVaultSize();
-
         __ERC4626_init(IERC20Upgradeable(_depositToken));
         __Ownable_init();
         transferOwnership(_entity);
