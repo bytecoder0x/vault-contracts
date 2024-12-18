@@ -119,11 +119,11 @@ contract TokenSale is ITokenSale, Ownable, Pausable {
 
             uint256 excess = WETH_TOKEN.balanceOf(address(this)) - (wethBalanceBefore + paymentAmount);
             if (excess > 0) WETH_TOKEN.transfer(msg.sender, excess);
+            IERC20(_paymentToken).safeTransfer(owner(), paymentAmount);
         } else {
             if (msg.value != 0) revert EthNotAllowedForErc20Purchase();
+            IERC20(_paymentToken).safeTransferFrom(msg.sender, owner(), paymentAmount);
         }
-
-        IERC20(_paymentToken).safeTransferFrom(msg.sender, owner(), paymentAmount);
 
         SALE_TOKEN.approve(vestingContract, _amount);
         ITokenVesting(vestingContract).createVesting(
