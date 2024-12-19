@@ -63,10 +63,6 @@ contract VaultFactory is Ownable, IVaultFactory {
         
         if (_desiredCap > maxAllowedPoolSize) revert NooAllowedPoolSize();
 
-        uint256 collateralInStable = _desiredCap * COLLATERAL_PERCENTAGE / MAX_BIPS;
-        uint256 collateralInGoil = ORACLE.getTokensForPurchasePrice(collateralInStable);
-        TREASURY.depositCollateral(msg.sender, collateralInGoil);
-
         Vault vault = Vault(VAULT_IMPLEMENTATION.clone());
         vault.initialize(
             msg.sender,
@@ -81,6 +77,9 @@ contract VaultFactory is Ownable, IVaultFactory {
             unlockEndTime
         );
 
+        uint256 refundableAmount = ORACLE.getPaymentAmountForTokens(_desiredCap);
+        uint256 requiredCollateral = TREASURY.getRequiredCollateral(_desiredCap);
+
         VaultInfo memory newVault = VaultInfo({
             entity: msg.sender,
             interestRate: _interestRate,
@@ -88,11 +87,13 @@ contract VaultFactory is Ownable, IVaultFactory {
             startTime: _startTime,
             fundingEndTime: fundingEndTime,
             unlockEndTime: unlockEndTime,
-            collateralAmount: collateralInGoil
+            collateralAmount: requiredCollateral,
+            refundableAmount: refundableAmount
         });
 
-        allVaults.push(newVault);
         vaults[address(vault)] = newVault;
+        allVaults.push(newVault);
+        TREASURY.depositCollateral(address(vault));
 
         emit VaultCreated(address(vault), msg.sender, newVault);
     }
@@ -119,6 +120,18 @@ contract VaultFactory is Ownable, IVaultFactory {
 
     function getVaultEntity(address _vault) public view returns (address) {
         return vaults[_vault].entity;
+    }
+
+    function getCollateralAmount(address _vault) public view returns (uint256) {
+        return vaults[_vault].collateralAmount;
+    }
+
+    function getRefundableAmount(address _vault) public view returns (uint256) {
+        return vaults[_vault].refundableAmount;
+    }
+
+    function getVault(address _vault) public view returns (VaultInfo memory) {
+        return vaults[_vault];
     }
 
     function getAllVaults() public view returns (VaultInfo[] memory) {
