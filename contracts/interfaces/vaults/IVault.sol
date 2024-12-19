@@ -4,6 +4,7 @@ pragma solidity ^0.8.27;
 import {IERC4626Upgradeable} from "@openzeppelin/contracts-upgradeable/interfaces/IERC4626Upgradeable.sol";
 import {IERC20Upgradeable} from "@openzeppelin/contracts-upgradeable/token/ERC20/IERC20Upgradeable.sol";
 import {IScoring} from "./IScoring.sol";
+
 interface IVault is IERC4626Upgradeable {
     error WithdrawMoreThanMax();
     error VaultNotStarted();

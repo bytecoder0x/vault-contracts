@@ -30,6 +30,7 @@ interface IVaultFactory {
         uint256 fundingEndTime;
         uint256 unlockEndTime;
         uint256 collateralAmount;
+        uint256 refundableAmount;
     }
 
     event ScoringContractSet(address indexed scoringContract);
@@ -50,7 +51,8 @@ interface IVaultFactory {
         uint256 startTime,
         uint256 fundingEndTime,
         uint256 unlockEndTime,
-        uint256 collateralAmount
+        uint256 collateralAmount,
+        uint256 refundableAmount
     );
 
     function createVault(
@@ -65,6 +67,9 @@ interface IVaultFactory {
     function setTreasuryContract(address _treasuryContract) external;
     function getIsValidVault(address _vault) external view returns (bool);
     function getVaultEntity(address _vault) external view returns (address);
+    function getCollateralAmount(address _vault) external view returns (uint256);
+    function getRefundableAmount(address _vault) external view returns (uint256);
+    function getVault(address _vault) external view returns (VaultInfo memory);
     function getAllVaults() external view returns (VaultInfo[] memory);
     function getVaultsCount() external view returns (uint256);
 }

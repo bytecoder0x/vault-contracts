@@ -19,8 +19,8 @@ interface IOracle {
     function secondsAgo() external view returns (uint32);
 
     function getPricePerToken() external view returns (uint256);
-    function getPurchasePriceForTokens(uint256 _tokenAmount) external view returns (uint256);
-    function getTokensForPurchasePrice(uint256 _paymentAmount) external view returns (uint256);
+    function getPaymentAmountForTokens(uint256 _tokenAmount) external view returns (uint256);
+    function getTokenAmountForPayment(uint256 _paymentAmount) external view returns (uint256);
     function setSecondsAgo(uint32 _secondsAgo) external;
     function setPoolForTrackingPrice(address _purchaseToken, uint24 _poolFee) external;
 }

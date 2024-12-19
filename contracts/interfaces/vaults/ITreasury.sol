@@ -2,19 +2,27 @@
 pragma solidity ^0.8.27;
 
 interface ITreasury {
+    struct Collateral {
+        uint256 collateralLocked;
+        uint256 collateralUnlocked;
+    }
+
     event TokensWithdrawn(address indexed token, address indexed to, uint256 amount);
     event VaultFunded(address indexed vault, uint256 amount);
     event StakingTokensReplenished(address indexed token, uint256 amount);
     event StakingTokensTransferred(address indexed recipient, uint256 amount);
     event CollateralUnlocked(address indexed entity, uint256 amount);
-    event CollateralDeposited(address indexed depositor, address indexed entity, uint256 amount);
+    event CollateralDeposited(address indexed depositor, address indexed entity, address indexed vault, uint256 amount);
     event CollateralWithdrawn(address indexed entity, uint256 amount);
 
+    error OracleMustBeContract();
     error ZeroAmountToFundVault();
     error ZeroAmountToUnlockCollateral();
     error ZeroAmountToTransfer();
     error OnlyScoringAllowed();
     error OnlyStakingAllowed();
+    error OnlyLicenseAllowed();
+    error OnlyVaultFactoryAllowed();
     error VaultFactoryMustBeContract();
     error GoilTokenMustBeContract();
     error ScoringMustBeContract();
@@ -27,14 +35,16 @@ interface ITreasury {
     error CannotWithdrawDuringActiveLicense();
     error InsufficientCollateral();
     error VaultIsNotValid();
-
-    function collateralDeposited(address) external view returns (uint256);
     
+    function collateral(address _entity) external view returns (uint256, uint256);
+
+    function depositCollateral(address _vault) external;
     function depositCollateral(address _entity, uint256 _amount) external;
     function withdrawCollateral(uint256 _amount) external;
-    function unlockCollateral(address _entity, uint256 _amount) external;
-    function fundVault(address _vault, uint256 _amount) external;
-    // function transferStakingTokens(address _recipient, uint256 _amount) external;
-    // function withdrawTokens(address _recipient, address _token, uint256 _amount) external;
-    // function withdrawAllTokens(address _token) external;
+    function unlockCollateral(address _vault) external;
+    function fundVault(address _vault) external;
+    function transferStakingTokens(address _recipient, uint256 _amount) external;
+    function withdrawTokens(address _recipient, address _token, uint256 _amount) external;
+    function withdrawAllTokens(address _token) external;
+    function getRequiredCollateral(uint256 _poolSize) external view returns (uint256);
 }
