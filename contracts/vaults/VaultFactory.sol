@@ -58,7 +58,8 @@ contract VaultFactory is Ownable, IVaultFactory {
         if (fundingEndTime <= _startTime) revert StartTimeMustBeBeforeFundingEndTime();
         if (unlockEndTime <= fundingEndTime) revert FundingEndTimeMustBeBeforeUnlockEndTime();
 
-        uint256 maxAllowedPoolSize = SCORING.getMaxPoolSize(msg.sender);
+        uint256 maxPoolSize = SCORING.getMaxPoolSize(msg.sender);
+        uint256 maxAllowedPoolSize = maxPoolSize + _interestRate * _unlockPeriod / MAX_BIPS;
         uint256 promisedCap = _desiredCap * (MAX_BIPS + _interestRate) / MAX_BIPS;
         
         if (_desiredCap > maxAllowedPoolSize) revert NooAllowedPoolSize();
@@ -69,7 +70,6 @@ contract VaultFactory is Ownable, IVaultFactory {
             address(SCORING),
             address(TREASURY),
             DEPOSIT_TOKEN,
-            _interestRate,
             _desiredCap,
             promisedCap,
             _startTime,

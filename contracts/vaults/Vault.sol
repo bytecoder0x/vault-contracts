@@ -21,7 +21,6 @@ contract Vault is Initializable, ERC4626Upgradeable, OwnableUpgradeable, IVault 
     uint256 public goilRate;
     uint256 public desiredCap;
     uint256 public promisedCap;
-    uint256 public interestRate;
     uint256 public startTime;
     uint256 public fundingEndTime;
     uint256 public unlockEndTime;
@@ -31,8 +30,7 @@ contract Vault is Initializable, ERC4626Upgradeable, OwnableUpgradeable, IVault 
         address _entity,
         address _scoring,
         address _depositToken,
-        address _goilToken,
-        uint256 _interestRate, 
+        address _goilToken, 
         uint256 _desiredCap,
         uint256 _promisedCap,
         uint256 _startTime,
@@ -47,7 +45,6 @@ contract Vault is Initializable, ERC4626Upgradeable, OwnableUpgradeable, IVault 
         GOIL_TOKEN = IERC20Upgradeable(_goilToken);
         desiredCap = _desiredCap;
         promisedCap = _promisedCap;
-        interestRate = _interestRate;
         startTime = _startTime;
         fundingEndTime = _fundingEndTime;
         unlockEndTime = _unlockEndTime;

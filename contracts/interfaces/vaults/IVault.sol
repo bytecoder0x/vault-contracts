@@ -25,7 +25,6 @@ interface IVault is IERC4626Upgradeable {
     function goilRate() external view returns (uint256);
     function desiredCap() external view returns (uint256);
     function promisedCap() external view returns (uint256);
-    function interestRate() external view returns (uint256);
     function startTime() external view returns (uint256);
     function fundingEndTime() external view returns (uint256);
     function unlockEndTime() external view returns (uint256);
@@ -35,8 +34,7 @@ interface IVault is IERC4626Upgradeable {
         address _entity,
         address _scoring,
         address _depositToken,
-        address _goilToken,
-        uint256 _interestRate, 
+        address _goilToken, 
         uint256 _desiredCap,
         uint256 _promisedCap,
         uint256 _startTime,
