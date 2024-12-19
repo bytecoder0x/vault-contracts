@@ -4,7 +4,9 @@ pragma solidity ^0.8.27;
 import {AccessControl} from "@openzeppelin/contracts/access/AccessControl.sol";
 import {IQuadReader} from "@quadrata/contracts/interfaces/IQuadReader.sol";
 import {IERC20} from "@openzeppelin/contracts/token/ERC20/IERC20.sol";
+import {IScoring} from "../interfaces/vaults/IScoring.sol";
 import {ILicense} from "../interfaces/vaults/ILicense.sol";
+import {ITreasury} from "../interfaces/vaults/ITreasury.sol";
 
 contract License is AccessControl, ILicense {
     bytes32 public constant MANAGER_ROLE = keccak256("MANAGER_ROLE");
@@ -14,7 +16,8 @@ contract License is AccessControl, ILicense {
 
     IQuadReader public immutable QADRATA_READER;
     IERC20 public immutable GOIL_TOKEN;
-    address public immutable TREASURY;
+    ITreasury public immutable TREASURY;
+    IScoring public scoringContract;
 
     uint256 public requiredVotesPercentage = 66_00;
     uint256 public votingPeriod = 7 days;
@@ -24,9 +27,14 @@ contract License is AccessControl, ILicense {
     uint256 public applicationFee;
     uint256 public licenseMonthlyFee;
 
+    mapping(address => LicenseFeeAndCollateral) public licenseFeeAndCollateralPaid;
     mapping(address => mapping(uint256 => LicenseInfo)) public licenses;
     mapping(address => uint256) public licenseCount;
-    mapping(address => uint256) public licenseFeePaid;
+
+    modifier onlyWithSetupScoringContract() {
+        if (address(scoringContract) == address(0)) revert ScoringContractNotSet();
+        _;
+    }
 
     constructor(
         address _admin,
@@ -44,7 +52,7 @@ contract License is AccessControl, ILicense {
 
         QADRATA_READER = IQuadReader(_qadrataReader);
         GOIL_TOKEN = IERC20(_goilToken);
-        TREASURY = _treasury;
+        TREASURY = ITreasury(_treasury);
         applicationFee = _applicationFee;
         licenseMonthlyFee = _licenseMonthlyFee;
         requiredVotesThreshold = (GOIL_TOKEN.totalSupply() * requiredVotesPercentage) / PERCENTAGE_DENOMINATOR;
@@ -53,7 +61,7 @@ contract License is AccessControl, ILicense {
         _grantRole(MANAGER_ROLE, _admin);
     }
 
-    function submitLicense(uint256 _licenseEndTime) external {
+    function submitLicense(uint256 _licenseEndTime, uint256 _collateralAmount) external onlyWithSetupScoringContract {
         LicenseState state = getLicenseStatus(msg.sender);
         uint256 licenseStartTime = block.timestamp + votingPeriod;
         uint256 licensePeriod = _licenseEndTime - licenseStartTime;
@@ -63,23 +71,30 @@ contract License is AccessControl, ILicense {
         if (licenseExpirationLimit < licensePeriod) revert LicensePeriodTooLong();
         if (state == LicenseState.ACTIVE || state == LicenseState.PENDING) revert LicenseAlreadySubmitted();
         
+        LicenseFeeAndCollateral memory licenseFeeAndCollateral = licenseFeeAndCollateralPaid[msg.sender];
+
+        uint256 licenseFeePaid = licenseFeeAndCollateral.licenseFee;
+        uint256 licenseFee = (licensePeriod / 30 days) * licenseMonthlyFee;
+
+        licenseFee > licenseFeePaid ? licenseFee -= licenseFeePaid : licenseFee = 0;
+
+        GOIL_TOKEN.transferFrom(msg.sender, address(TREASURY), applicationFee);
+        if (licenseFee + _collateralAmount > 0) GOIL_TOKEN.transferFrom(msg.sender, address(this), licenseFee + _collateralAmount);
+
+        licenseFeeAndCollateralPaid[msg.sender].licenseFee += licenseFee;
+        licenseFeeAndCollateralPaid[msg.sender].collateral += _collateralAmount;
+
         licenseCount[msg.sender] += 1;
         uint256 licenseId = licenseCount[msg.sender];
         LicenseInfo storage license = licenses[msg.sender][licenseId];
 
-        uint256 licenseFee = (licensePeriod / 30 days) * licenseMonthlyFee;
-
-        GOIL_TOKEN.transferFrom(msg.sender, TREASURY, applicationFee);
-        GOIL_TOKEN.transferFrom(msg.sender, address(this), licenseFee);
-
-        licenseFeePaid[msg.sender] += licenseFee;
         license.startTime = licenseStartTime;
         license.endTime = _licenseEndTime;
 
-        emit AppliedForLicense(msg.sender, licenseId, licenseStartTime, _licenseEndTime);
+        emit AppliedForLicense(msg.sender, licenseId, licenseStartTime, _licenseEndTime, licenseFee, _collateralAmount);
     }
 
-    function vote(address _applicant) external {
+    function vote(address _applicant) external onlyWithSetupScoringContract {
         uint256 votes = GOIL_TOKEN.balanceOf(msg.sender);
         uint256 licenseId = licenseCount[_applicant];
 
@@ -95,22 +110,40 @@ contract License is AccessControl, ILicense {
 
         if (license.totalVotes >= requiredVotesThreshold) {
             uint256 licenseFee = (license.endTime - license.startTime) / 30 days * licenseMonthlyFee;
-            GOIL_TOKEN.transfer(TREASURY, licenseFee);
+            uint256 collateralAmount = licenseFeeAndCollateralPaid[_applicant].collateral;
 
-            licenseFeePaid[_applicant] -= licenseFee;
+            GOIL_TOKEN.transfer(address(TREASURY), licenseFee);
+            GOIL_TOKEN.approve(address(TREASURY), collateralAmount);
+            TREASURY.depositCollateral(_applicant, collateralAmount);
+
+            licenseFeeAndCollateralPaid[_applicant].licenseFee -= licenseFee;
+            licenseFeeAndCollateralPaid[_applicant].collateral = 0;
             license.approved = true;
+
+            if (scoringContract.getIsPerformanceDataSet(_applicant)) scoringContract.setInitialScore(_applicant);
+            emit LicenseApproved(_applicant, licenseId);
         }
 
         emit Voted(_applicant, msg.sender, licenseId, votes);
     }
 
-    function refundLicenseFee() external {
-        uint256 licenseFee = getRefundableLicenseFee(msg.sender);
-        if (licenseFee == 0) revert NoLicenseFeeToRefund();
+    function refundLicenseFeeAndCollateral() external {
+        uint256 refundableAmount = getRefundableAmount(msg.sender);
+        if (refundableAmount == 0) revert NoLicenseFeeToRefund();
 
-        licenseFeePaid[msg.sender] -= licenseFee;
-        GOIL_TOKEN.transfer(msg.sender, licenseFee);
-        emit RefundedLicenseFee(msg.sender, licenseFee);
+        licenseFeeAndCollateralPaid[msg.sender].licenseFee = 0;
+        licenseFeeAndCollateralPaid[msg.sender].collateral = 0;
+
+        GOIL_TOKEN.transfer(msg.sender, refundableAmount);
+        emit RefundedLicenseFee(msg.sender, refundableAmount);
+    }
+
+    function setScoringContract(address _scoringContract) external onlyRole(MANAGER_ROLE) {
+        if (!_isContract(_scoringContract)) revert ScoringContractMustBeContract();
+        if (address(scoringContract) != address(0)) revert ScoringContractAlreadySet();
+
+        scoringContract = IScoring(_scoringContract);
+        emit ScoringContractUpdated(_scoringContract);
     }
 
     function setApplicationFee(uint256 _applicationFee) external onlyRole(MANAGER_ROLE) {
@@ -170,6 +203,10 @@ contract License is AccessControl, ILicense {
         return getLicenseStatus(_entity) == LicenseState.ACTIVE;
     }
 
+    function getLicenseIsPending(address _entity) public view returns (bool) {
+        return getLicenseStatus(_entity) == LicenseState.PENDING;
+    }
+
     function getLicenseByEntity(address _entity) public view returns (uint256, uint256, bool) {
         uint256 licenseId = licenseCount[_entity];
         LicenseInfo storage license = licenses[_entity][licenseId];
@@ -189,18 +226,12 @@ contract License is AccessControl, ILicense {
         return (license.totalVotes * PERCENTAGE_DENOMINATOR) / GOIL_TOKEN.totalSupply();
     }
 
-    function getRefundableLicenseFee(address _entity) public view returns (uint256) {
+    function getRefundableAmount(address _entity) public view returns (uint256) {
         LicenseState state = getLicenseStatus(_entity);
-        uint256 licenseFee = licenseFeePaid[_entity];
+        uint256 licenseFee = licenseFeeAndCollateralPaid[_entity].licenseFee;
+        uint256 collateral = licenseFeeAndCollateralPaid[_entity].collateral;
 
-        if (state == LicenseState.PENDING) {
-            (uint256 startTime, uint256 endTime, ) = getLicenseByEntity(_entity);
-            uint256 licensePeriod = endTime - startTime;
-            uint256 currentLicenseFee = (licensePeriod / 30 days) * licenseMonthlyFee;
-            licenseFee -= currentLicenseFee;
-        }
-
-        return licenseFee;
+        return state == LicenseState.PENDING ? 0 : licenseFee + collateral;
     }
 
     function _isContract(address _address) private view returns (bool) {

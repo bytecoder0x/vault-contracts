@@ -7,9 +7,9 @@ import {IERC20} from "@openzeppelin/contracts/token/ERC20/IERC20.sol";
 import {IERC20Metadata} from "@openzeppelin/contracts/token/ERC20/extensions/IERC20Metadata.sol";
 import {IUniswapV3Pool} from "@uniswap/v3-core/contracts/interfaces/IUniswapV3Pool.sol";
 import {IUniswapV3Factory} from "@uniswap/v3-core/contracts/interfaces/IUniswapV3Factory.sol";
-import {IOracale} from "../interfaces/vaults/IOracale.sol";
+import {IOracle} from "../interfaces/vaults/IOracle.sol";
 
-contract Oracale is AccessControl, IOracale {
+contract Oracle is AccessControl, IOracle {
     bytes32 public constant MANAGER_ROLE = keccak256("MANAGER_ROLE");
 
     IUniswapV3Factory public immutable FACTORY_V3;
@@ -46,16 +46,16 @@ contract Oracale is AccessControl, IOracale {
         return price;
     }
 
-    function getPriceForTokens(uint256 _amount) external view returns (uint256) {
+    function getPaymentAmountForTokens(uint256 _tokenAmount) external view returns (uint256) {
         int24 tick = OracleLibrary.consult(pool, secondsAgo);
-        uint256 price = OracleLibrary.getQuoteAtTick(tick, uint128(_amount), GOIL_TOKEN, purchaseToken);
+        uint256 price = OracleLibrary.getQuoteAtTick(tick, uint128(_tokenAmount), GOIL_TOKEN, purchaseToken);
         
         return price;
     }
 
-    function getTokensPerPrice(uint256 _price) external view returns (uint256) {
+    function getTokenAmountForPayment(uint256 _paymentAmount) external view returns (uint256) {
         int24 tick = OracleLibrary.consult(pool, secondsAgo);
-        uint256 amount = OracleLibrary.getQuoteAtTick(tick, uint128(_price), purchaseToken, GOIL_TOKEN);
+        uint256 amount = OracleLibrary.getQuoteAtTick(tick, uint128(_paymentAmount), purchaseToken, GOIL_TOKEN);
 
         return amount;
     }
