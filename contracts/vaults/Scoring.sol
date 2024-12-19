@@ -93,10 +93,9 @@ contract Scoring is AccessControl, IScoring {
             totalFails[entity] += 1;
             penalties[entity] = penalty;
         
-            TREASURY.fundVault(address(vault), vault.desiredCap());
+            TREASURY.fundVault(address(vault));
         }  else {
-            (, , , , , , uint256 collateralAmount) = VAULT_FACTORY.vaults(address(vault));
-            TREASURY.unlockCollateral(entity, collateralAmount);
+            TREASURY.unlockCollateral(address(vault));
         }
         
         uint256 poolSize = vault.desiredCap();
@@ -118,7 +117,7 @@ contract Scoring is AccessControl, IScoring {
     }
 
     function setInitialScore(address _entity) public onlyAdminOrLicense {
-        uint256 entityCollateral = TREASURY.collateralDeposited(_entity);
+        (uint256 entityCollateral, ) = TREASURY.collateral(_entity);
         PerformanceData memory entityPerformanceData = performanceData[_entity];
 
         uint256 weightedCollateralRatio = (entityCollateral * MAX_RATIO) / thresholdCollateral;
