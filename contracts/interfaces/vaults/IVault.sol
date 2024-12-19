@@ -6,6 +6,13 @@ import {IERC20Upgradeable} from "@openzeppelin/contracts-upgradeable/token/ERC20
 import {IScoring} from "./IScoring.sol";
 
 interface IVault is IERC4626Upgradeable {
+    enum Swap {
+        V2,
+        V3_500,
+        V3_3000,
+        V3_10000
+    }
+
     error WithdrawMoreThanMax();
     error VaultNotStarted();
     error VaultFundingTimeIsEnded();
@@ -33,8 +40,12 @@ interface IVault is IERC4626Upgradeable {
     function initialize(
         address _entity,
         address _scoring,
-        address _depositToken,
-        address _goilToken, 
+        address _treasury,
+        address _goilToken,
+        address _depositToken, 
+        address _routerV2,
+        address _routerV3,
+        address _quoter,
         uint256 _desiredCap,
         uint256 _promisedCap,
         uint256 _startTime,

@@ -7,6 +7,8 @@ import {IScoring} from "./IScoring.sol";
 
 interface IVaultFactory {
     error OracleMustBeContract();
+    error RouterV2MustBeContract();
+    error RouterV3MustBeContract();
     error DepositTokenMustBeContract();
     error DesiredCapCannotBeZero(); 
     error InterestRateCannotBeZero();
@@ -21,6 +23,7 @@ interface IVaultFactory {
     error TreasuryContractNotSet();
     error ScoringContractMustBeContract();
     error TreasuryContractMustBeContract();
+    error QuoterMustBeContract();
 
     struct VaultInfo {
         address entity;

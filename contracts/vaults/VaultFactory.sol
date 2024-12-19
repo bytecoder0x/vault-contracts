@@ -18,7 +18,12 @@ contract VaultFactory is Ownable, IVaultFactory {
 
     IOracle public immutable ORACLE;
     address public immutable DEPOSIT_TOKEN;
+    address public immutable GOIL_TOKEN;
     address public immutable VAULT_IMPLEMENTATION;
+
+    address public immutable ROUTER_V3;
+    address public immutable ROUTER_V2;
+    address public immutable QUOTER;
 
     ITreasury public TREASURY;
     IScoring public SCORING;
@@ -26,19 +31,33 @@ contract VaultFactory is Ownable, IVaultFactory {
     VaultInfo[] public allVaults;
     mapping(address => VaultInfo) public vaults;
 
-
     modifier withSetupScoringAndTreasuryContracts() {
         if (address(SCORING) == address(0)) revert ScoringContractNotSet();
         if (address(TREASURY) == address(0)) revert TreasuryContractNotSet();
         _;
     }
 
-    constructor(address _owner, address _depositToken, address _oracle) Ownable(_owner) {
+    constructor(
+        address _owner,
+        address _depositToken,
+        address _goilToken,
+        address _oracle,
+        address _routerV2,
+        address _routerV3,
+        address _quoter
+    ) Ownable(_owner) {
         if (!_isContract(_oracle)) revert OracleMustBeContract();
         if (!_isContract(_depositToken)) revert DepositTokenMustBeContract();
+        if (!_isContract(_routerV2)) revert RouterV2MustBeContract();
+        if (!_isContract(_routerV3)) revert RouterV3MustBeContract();
+        if (!_isContract(_quoter)) revert QuoterMustBeContract();
 
         ORACLE = IOracle(_oracle);
         DEPOSIT_TOKEN = _depositToken;
+        GOIL_TOKEN = _goilToken;
+        ROUTER_V2 = _routerV2;
+        ROUTER_V3 = _routerV3;
+        QUOTER = _quoter;
         VAULT_IMPLEMENTATION = address(new Vault());
     }
 
@@ -59,9 +78,9 @@ contract VaultFactory is Ownable, IVaultFactory {
         if (unlockEndTime <= fundingEndTime) revert FundingEndTimeMustBeBeforeUnlockEndTime();
 
         uint256 maxPoolSize = SCORING.getMaxPoolSize(msg.sender);
-        uint256 maxAllowedPoolSize = maxPoolSize + _interestRate * _unlockPeriod / MAX_BIPS;
-        uint256 promisedCap = _desiredCap * (MAX_BIPS + _interestRate) / MAX_BIPS;
-        
+        uint256 maxAllowedPoolSize = maxPoolSize + (_interestRate * _unlockPeriod) / MAX_BIPS;
+        uint256 promisedCap = (_desiredCap * (MAX_BIPS + _interestRate)) / MAX_BIPS;
+
         if (_desiredCap > maxAllowedPoolSize) revert NooAllowedPoolSize();
 
         Vault vault = Vault(VAULT_IMPLEMENTATION.clone());
@@ -69,7 +88,11 @@ contract VaultFactory is Ownable, IVaultFactory {
             msg.sender,
             address(SCORING),
             address(TREASURY),
+            GOIL_TOKEN,
             DEPOSIT_TOKEN,
+            ROUTER_V2,
+            ROUTER_V3,
+            QUOTER,
             _desiredCap,
             promisedCap,
             _startTime,
