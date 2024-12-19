@@ -85,7 +85,7 @@ contract Vault is Initializable, ERC4626Upgradeable, OwnableUpgradeable, IVault 
 
         if (!isVaultFailed && currentTime > unlockEndTime && totalAssets() < promisedCap) {
             isVaultFailed = true;
-            _asset = GOIL_TOKEN;
+            _asset = GOIL_TOKEN; //! _asset in ERC4626Upgradeable must be internal for this case
             SCORING.updateEntityScore();
         }
 
