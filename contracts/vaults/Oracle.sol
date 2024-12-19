@@ -46,14 +46,14 @@ contract Oracle is AccessControl, IOracle {
         return price;
     }
 
-    function getPurchasePriceForTokens(uint256 _tokenAmount) external view returns (uint256) {
+    function getPaymentAmountForTokens(uint256 _tokenAmount) external view returns (uint256) {
         int24 tick = OracleLibrary.consult(pool, secondsAgo);
         uint256 price = OracleLibrary.getQuoteAtTick(tick, uint128(_tokenAmount), GOIL_TOKEN, purchaseToken);
         
         return price;
     }
 
-    function getTokensForPurchasePrice(uint256 _paymentAmount) external view returns (uint256) {
+    function getTokenAmountForPayment(uint256 _paymentAmount) external view returns (uint256) {
         int24 tick = OracleLibrary.consult(pool, secondsAgo);
         uint256 amount = OracleLibrary.getQuoteAtTick(tick, uint128(_paymentAmount), purchaseToken, GOIL_TOKEN);
 
