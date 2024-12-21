@@ -21,8 +21,11 @@ interface IVaultFactory {
     error TreasuryContractCannotBeZeroAddress();
     error TreasuryContractAlreadySet();
     error TreasuryContractNotSet();
+    error StakingContractAlreadySet();
+    error StakingContractNotSet();
     error ScoringContractMustBeContract();
     error TreasuryContractMustBeContract();
+    error StakingContractMustBeContract();
     error QuoterMustBeContract();
 
     struct VaultInfo {
@@ -38,6 +41,7 @@ interface IVaultFactory {
 
     event ScoringContractSet(address indexed scoringContract);
     event TreasuryContractSet(address indexed treasuryContract);
+    event StakingContractSet(address indexed stakingContract);
     event VaultCreated(address indexed vault, address indexed entity, VaultInfo vaultInfo);
 
     function ORACLE() external view returns (IOracle);

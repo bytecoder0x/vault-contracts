@@ -43,7 +43,7 @@ interface ITreasury {
     function withdrawCollateral(uint256 _amount) external;
     function unlockCollateral(address _vault) external;
     function fundVault(address _vault) external;
-    function transferStakingTokens(address _recipient, uint256 _amount) external;
+    function unstakeTokens(address _recipient, uint256 _amount) external;
     function withdrawTokens(address _recipient, address _token, uint256 _amount) external;
     function withdrawAllTokens(address _token) external;
     function getRequiredCollateral(uint256 _poolSize) external view returns (uint256);

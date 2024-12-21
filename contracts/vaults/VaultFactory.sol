@@ -9,6 +9,7 @@ import {IVaultFactory} from "../interfaces/vaults/IVaultFactory.sol";
 import {ITreasury} from "../interfaces/vaults/ITreasury.sol";
 import {IScoring} from "../interfaces/vaults/IScoring.sol";
 import {IOracle} from "../interfaces/vaults/IOracle.sol";
+import {IStaking} from "../interfaces/vaults/IStaking.sol";
 
 contract VaultFactory is Ownable, IVaultFactory {
     using Clones for address;
@@ -27,13 +28,15 @@ contract VaultFactory is Ownable, IVaultFactory {
 
     ITreasury public TREASURY;
     IScoring public SCORING;
+    IStaking public STAKING;
 
     VaultInfo[] public allVaults;
     mapping(address => VaultInfo) public vaults;
 
-    modifier withSetupScoringAndTreasuryContracts() {
+    modifier withSetupNecessaryContracts() {
         if (address(SCORING) == address(0)) revert ScoringContractNotSet();
         if (address(TREASURY) == address(0)) revert TreasuryContractNotSet();
+        if (address(STAKING) == address(0)) revert StakingContractNotSet();
         _;
     }
 
@@ -67,7 +70,7 @@ contract VaultFactory is Ownable, IVaultFactory {
         uint256 _startTime,
         uint256 _fundingPeriod,
         uint256 _unlockPeriod
-    ) external withSetupScoringAndTreasuryContracts {
+    ) external withSetupNecessaryContracts {
         uint256 fundingEndTime = _startTime + _fundingPeriod;
         uint256 unlockEndTime = _startTime + _unlockPeriod;
 
@@ -88,6 +91,7 @@ contract VaultFactory is Ownable, IVaultFactory {
             msg.sender,
             address(SCORING),
             address(TREASURY),
+            address(STAKING),
             GOIL_TOKEN,
             DEPOSIT_TOKEN,
             ROUTER_V2,
@@ -135,6 +139,14 @@ contract VaultFactory is Ownable, IVaultFactory {
 
         TREASURY = ITreasury(_treasuryContract);
         emit TreasuryContractSet(_treasuryContract);
+    }
+
+    function setStakingContract(address _stakingContract) public onlyOwner {
+        if (!_isContract(_stakingContract)) revert StakingContractMustBeContract();
+        if (address(STAKING) != address(0)) revert StakingContractAlreadySet();
+
+        STAKING = IStaking(_stakingContract);
+        emit StakingContractSet(_stakingContract);
     }
 
     function getIsValidVault(address _vault) public view returns (bool) {
