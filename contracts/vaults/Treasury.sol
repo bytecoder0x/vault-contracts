@@ -129,8 +129,8 @@ contract Treasury is AccessControl, ITreasury {
         if (!VAULT_FACTORY.getIsValidVault(_vault)) revert VaultIsNotValid();
 
         address entity = VAULT_FACTORY.getVaultEntity(_vault);
-        uint256 collateralAmountByEntity = collateral[entity].collateralLocked;
         uint256 refundableAmount = VAULT_FACTORY.getRefundableAmount(_vault);
+        uint256 collateralAmountByEntity = collateral[entity].collateralLocked;
 
         if (collateralAmountByEntity < refundableAmount) {
             collateral[entity].collateralLocked = 0;
@@ -142,7 +142,7 @@ contract Treasury is AccessControl, ITreasury {
         emit VaultFunded(_vault, refundableAmount);
     }
 
-    function transferStakingTokens(address _recipient, uint256 _amount) external onlyStaking {
+    function unstakeTokens(address _recipient, uint256 _amount) external onlyStaking {
         if (_recipient == address(0)) revert RecipientCannotBeZeroAddress();
         if (_amount == 0) revert ZeroAmountToTransfer();
 

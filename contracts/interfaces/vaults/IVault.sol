@@ -41,6 +41,7 @@ interface IVault is IERC4626Upgradeable {
         address _entity,
         address _scoring,
         address _treasury,
+        address _staking,
         address _goilToken,
         address _depositToken, 
         address _routerV2,

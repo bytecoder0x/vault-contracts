@@ -13,11 +13,14 @@ import {IQuoterV2} from "@uniswap/v3-periphery/contracts/interfaces/IQuoterV2.so
 import {IERC20Upgradeable} from "@openzeppelin/contracts-upgradeable/token/ERC20/IERC20Upgradeable.sol";
 import {IScoring} from "../interfaces/vaults/IScoring.sol";
 import {IVault} from "../interfaces/vaults/IVault.sol";
+import {IStaking} from "../interfaces/vaults/IStaking.sol";
 
 contract Vault is Initializable, ERC4626Upgradeable, OwnableUpgradeable, IVault {
     using SafeERC20Upgradeable for IERC20Upgradeable;
 
     uint256 public constant MAX_BIPS = 100_00;
+    uint256 public constant STAKING_PERCENTAGE = 1_00; // 1%
+
     uint256 public constant SLIPPAGE_MULTIPLIER = MAX_BIPS - 2_00; // slippage == 2%
     uint256 public constant TRANSACTION_TIMEOUT = 15 minutes;
 
@@ -26,6 +29,7 @@ contract Vault is Initializable, ERC4626Upgradeable, OwnableUpgradeable, IVault 
     IQuoterV2 public QUOTER;
 
     IScoring public SCORING;
+    IStaking public STAKING;
     IERC20Upgradeable public GOIL_TOKEN;
     address public TREASURY;
 
@@ -43,6 +47,7 @@ contract Vault is Initializable, ERC4626Upgradeable, OwnableUpgradeable, IVault 
         address _entity,
         address _scoring,
         address _treasury,
+        address _staking,
         address _goilToken,
         address _depositToken,
         address _routerV2,
@@ -59,6 +64,7 @@ contract Vault is Initializable, ERC4626Upgradeable, OwnableUpgradeable, IVault 
         transferOwnership(_entity);
 
         SCORING = IScoring(_scoring);
+        STAKING = IStaking(_staking);
         GOIL_TOKEN = IERC20Upgradeable(_goilToken);
         TREASURY = _treasury;
         ROUTER_V2 = IUniswapV2Router01(_routerV2);
@@ -114,13 +120,20 @@ contract Vault is Initializable, ERC4626Upgradeable, OwnableUpgradeable, IVault 
         uint256 currentTime = block.timestamp;
 
         if (currentTime <= fundingEndTime) revert FundingEndTimeIsNotReached();
-        IERC20Upgradeable(asset()).safeTransferFrom(msg.sender, address(this), promisedCap);
         
+        uint256 stakingAmount = (promisedCap * STAKING_PERCENTAGE) / MAX_BIPS;
+        uint256 vaultAmount = promisedCap - stakingAmount;
+
+        IERC20Upgradeable(asset()).safeTransferFrom(msg.sender, address(this), vaultAmount);
+
         if (!isVaultFailed) {
             SCORING.updateEntityScore();
         } else {
-            _swap(promisedCap);
+            _swap(vaultAmount, address(TREASURY));
         }
+
+        _swap(stakingAmount, address(this));
+        STAKING.transferReward(stakingAmount);
 
         unlockEndTime = currentTime;
         emit DepositFromEntity(promisedCap);
@@ -140,7 +153,7 @@ contract Vault is Initializable, ERC4626Upgradeable, OwnableUpgradeable, IVault 
         return super.owner();
     }
 
-    function _swap(uint256 _amountIn) private returns (uint256 amountOut) {
+    function _swap(uint256 _amountIn, address _recipient) private returns (uint256 amountOut) {
         address tokenOut = address(GOIL_TOKEN);
         address tokenIn = address(asset());
         (Swap decision, uint24 fee, uint256 maxAmount) = _decider(_amountIn, tokenIn, tokenOut);
@@ -150,9 +163,9 @@ contract Vault is Initializable, ERC4626Upgradeable, OwnableUpgradeable, IVault 
             path[0] = tokenIn;
             path[1] = tokenOut;
 
-            amountOut = _swapV2(path, _amountIn, maxAmount);
+            amountOut = _swapV2(path, _amountIn, maxAmount, _recipient);
         } else {
-            amountOut = _swapV3(tokenIn, tokenOut, fee, _amountIn, maxAmount);
+            amountOut = _swapV3(tokenIn, tokenOut, fee, _amountIn, maxAmount, _recipient);
         }
     }
 
@@ -226,7 +239,8 @@ contract Vault is Initializable, ERC4626Upgradeable, OwnableUpgradeable, IVault 
     function _swapV2(
         address[] memory _path,
         uint256 _amountIn,
-        uint256 _amountOut
+        uint256 _amountOut,
+        address _recipient
     ) private returns (uint256 amountOut) {
         uint256 amountOutMin = (_amountOut * SLIPPAGE_MULTIPLIER) / MAX_BIPS;
         uint256 deadline = block.timestamp + TRANSACTION_TIMEOUT;
@@ -235,7 +249,7 @@ contract Vault is Initializable, ERC4626Upgradeable, OwnableUpgradeable, IVault 
             _amountIn,
             amountOutMin,
             _path,
-            TREASURY,
+            _recipient,
             deadline
         );
 
@@ -247,7 +261,8 @@ contract Vault is Initializable, ERC4626Upgradeable, OwnableUpgradeable, IVault 
         address _tokenOut,
         uint24 _fee,
         uint256 _amountIn,
-        uint256 _amountOut
+        uint256 _amountOut,
+        address _recipient
     ) private returns (uint256 amountOut) {
         uint256 amountOutMin = (_amountOut * SLIPPAGE_MULTIPLIER) / MAX_BIPS;
         uint256 deadline = block.timestamp + TRANSACTION_TIMEOUT;
@@ -257,7 +272,7 @@ contract Vault is Initializable, ERC4626Upgradeable, OwnableUpgradeable, IVault 
                 tokenIn: _tokenIn,
                 tokenOut: _tokenOut,
                 fee: _fee,
-                recipient: TREASURY,
+                recipient: _recipient,
                 deadline: deadline,
                 amountIn: _amountIn,
                 amountOutMinimum: amountOutMin,
