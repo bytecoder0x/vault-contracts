@@ -15,6 +15,9 @@ import {IWETH} from "../interfaces/common/IWETH.sol";
 contract TokenSale is ITokenSale, Ownable, Pausable {
     using SafeERC20 for IERC20;
 
+    uint256 public constant MAX_BIPS = 100_00;
+    uint256 public constant SLIPPAGE_MULTIPLIER = MAX_BIPS - 1_00; // slippage is 1%
+
     AggregatorV3Interface public immutable PRICE_FEED;
     IERC20 public immutable SALE_TOKEN;
     IERC20 public immutable USDC_TOKEN;
@@ -112,13 +115,18 @@ contract TokenSale is ITokenSale, Ownable, Pausable {
         if (paymentAmount == 0) revert PaymentAmountIsZero();
 
         if (_paymentToken == address(WETH_TOKEN)) {
-            if (msg.value < paymentAmount) revert InsufficientEthSent();
+            uint256 allowedPaymentAmount = (paymentAmount * SLIPPAGE_MULTIPLIER) / MAX_BIPS;
+            if (msg.value < allowedPaymentAmount) revert InsufficientEthSent();
 
             uint256 wethBalanceBefore = WETH_TOKEN.balanceOf(address(this));
             WETH_TOKEN.deposit{value: msg.value}();
+            
+            uint256 wethBalanceAfter = WETH_TOKEN.balanceOf(address(this));
+            if (wethBalanceAfter > wethBalanceBefore + paymentAmount) {
+                uint256 excess = wethBalanceAfter - (wethBalanceBefore + paymentAmount);
+                if (excess > 0) WETH_TOKEN.transfer(msg.sender, excess);
+            }
 
-            uint256 excess = WETH_TOKEN.balanceOf(address(this)) - (wethBalanceBefore + paymentAmount);
-            if (excess > 0) WETH_TOKEN.transfer(msg.sender, excess);
             IERC20(_paymentToken).safeTransfer(owner(), paymentAmount);
         } else {
             if (msg.value != 0) revert EthNotAllowedForErc20Purchase();
