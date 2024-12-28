@@ -120,11 +120,11 @@ contract TokenSale is ITokenSale, Ownable, Pausable {
 
             uint256 wethBalanceBefore = WETH_TOKEN.balanceOf(address(this));
             WETH_TOKEN.deposit{value: msg.value}();
-            
             uint256 wethBalanceAfter = WETH_TOKEN.balanceOf(address(this));
+            
             if (wethBalanceAfter > wethBalanceBefore + paymentAmount) {
                 uint256 excess = wethBalanceAfter - (wethBalanceBefore + paymentAmount);
-                if (excess > 0) WETH_TOKEN.transfer(msg.sender, excess);
+                WETH_TOKEN.transfer(msg.sender, excess);
             }
 
             IERC20(_paymentToken).safeTransfer(owner(), paymentAmount);
