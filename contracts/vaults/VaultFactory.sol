@@ -7,6 +7,7 @@ import {Vault} from "./Vault.sol";
 
 import {IVaultFactory} from "../interfaces/vaults/IVaultFactory.sol";
 import {ITreasury} from "../interfaces/vaults/ITreasury.sol";
+import {ILicense} from "../interfaces/vaults/ILicense.sol";
 import {IScoring} from "../interfaces/vaults/IScoring.sol";
 import {IOracle} from "../interfaces/vaults/IOracle.sol";
 import {IStaking} from "../interfaces/vaults/IStaking.sol";
@@ -27,6 +28,7 @@ contract VaultFactory is Ownable, IVaultFactory {
     address public immutable QUOTER;
 
     ITreasury public TREASURY;
+    ILicense public LICENSE;
     IScoring public SCORING;
     IStaking public STAKING;
 
@@ -37,6 +39,7 @@ contract VaultFactory is Ownable, IVaultFactory {
         if (address(SCORING) == address(0)) revert ScoringContractNotSet();
         if (address(TREASURY) == address(0)) revert TreasuryContractNotSet();
         if (address(STAKING) == address(0)) revert StakingContractNotSet();
+        if (address(LICENSE) == address(0)) revert LicenseContractNotSet();
         _;
     }
 
@@ -73,16 +76,18 @@ contract VaultFactory is Ownable, IVaultFactory {
     ) external withSetupNecessaryContracts {
         uint256 fundingEndTime = _startTime + _fundingPeriod;
         uint256 unlockEndTime = _startTime + _unlockPeriod;
-
+        
         if (_desiredCap == 0) revert DesiredCapCannotBeZero();
         if (_interestRate == 0) revert InterestRateCannotBeZero();
         if (_startTime <= block.timestamp) revert StartTimeMustBeInFuture();
         if (fundingEndTime <= _startTime) revert StartTimeMustBeBeforeFundingEndTime();
         if (unlockEndTime <= fundingEndTime) revert FundingEndTimeMustBeBeforeUnlockEndTime();
 
+        if (LICENSE.getLicenseExpirationTime(msg.sender) < unlockEndTime) revert UnlockPeriodTooLong();
+
         uint256 maxPoolSize = SCORING.getMaxPoolSize(msg.sender);
         uint256 maxAllowedPoolSize = maxPoolSize + (_interestRate * _unlockPeriod) / MAX_BIPS;
-        uint256 promisedCap = (_desiredCap * (MAX_BIPS + _interestRate)) / MAX_BIPS;
+        uint256 promisedCap = (_desiredCap * (MAX_BIPS + _interestRate)) / MAX_BIPS; // TODO: mb improve logic promisedCap
 
         if (_desiredCap > maxAllowedPoolSize) revert NooAllowedPoolSize();
 
@@ -108,6 +113,7 @@ contract VaultFactory is Ownable, IVaultFactory {
         uint256 requiredCollateral = TREASURY.getRequiredCollateral(_desiredCap);
 
         VaultInfo memory newVault = VaultInfo({
+            vault: address(vault),
             entity: msg.sender,
             interestRate: _interestRate,
             desiredCap: _desiredCap,
@@ -118,11 +124,20 @@ contract VaultFactory is Ownable, IVaultFactory {
             refundableAmount: refundableAmount
         });
 
+        // TODO: add mapping entity -> vaults?
         vaults[address(vault)] = newVault;
         allVaults.push(newVault);
-        TREASURY.depositCollateral(address(vault));
+        TREASURY.depositCollateral(address(vault)); // TODO: mb impove logic collateral
 
         emit VaultCreated(address(vault), msg.sender, newVault);
+    }
+
+    function setLicenseContract(address _licenseContract) public onlyOwner {
+        if (!_isContract(_licenseContract)) revert LicenseContractMustBeContract();
+        if (address(LICENSE) != address(0)) revert LicenseContractAlreadySet();
+
+        LICENSE = ILicense(_licenseContract);
+        emit LicenseContractSet(_licenseContract);
     }
 
     function setScoringContract(address _scoringContract) public onlyOwner {
@@ -150,7 +165,7 @@ contract VaultFactory is Ownable, IVaultFactory {
     }
 
     function getIsValidVault(address _vault) public view returns (bool) {
-        return vaults[_vault].entity != address(0);
+        return vaults[_vault].vault != address(0);
     }
 
     function getVaultEntity(address _vault) public view returns (address) {
