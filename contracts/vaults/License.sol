@@ -17,7 +17,7 @@ contract License is AccessControl, ILicense {
     IQuadReader public immutable QADRATA_READER;
     IERC20 public immutable GOIL_TOKEN;
     ITreasury public immutable TREASURY;
-    IScoring public scoringContract;
+    IScoring public SCORING;
 
     uint256 public requiredVotesPercentage = 66_00;
     uint256 public votingPeriod = 7 days;
@@ -31,8 +31,8 @@ contract License is AccessControl, ILicense {
     mapping(address => mapping(uint256 => LicenseInfo)) public licenses;
     mapping(address => uint256) public licenseCount;
 
-    modifier onlyWithSetupScoringContract() {
-        if (address(scoringContract) == address(0)) revert ScoringContractNotSet();
+    modifier withSetupScoringContract() {
+        if (address(SCORING) == address(0)) revert ScoringContractNotSet();
         _;
     }
 
@@ -61,7 +61,7 @@ contract License is AccessControl, ILicense {
         _grantRole(MANAGER_ROLE, _admin);
     }
 
-    function submitLicense(uint256 _licenseEndTime, uint256 _collateralAmount) external onlyWithSetupScoringContract {
+    function submitLicense(uint256 _licenseEndTime, uint256 _collateralAmount) external withSetupScoringContract {
         LicenseState state = getLicenseStatus(msg.sender);
         uint256 licenseStartTime = block.timestamp + votingPeriod;
         uint256 licensePeriod = _licenseEndTime - licenseStartTime;
@@ -94,7 +94,7 @@ contract License is AccessControl, ILicense {
         emit AppliedForLicense(msg.sender, licenseId, licenseStartTime, _licenseEndTime, licenseFee, _collateralAmount);
     }
 
-    function vote(address _applicant) external onlyWithSetupScoringContract {
+    function vote(address _applicant) external withSetupScoringContract {
         uint256 votes = GOIL_TOKEN.balanceOf(msg.sender);
         uint256 licenseId = licenseCount[_applicant];
 
@@ -120,7 +120,7 @@ contract License is AccessControl, ILicense {
             licenseFeeAndCollateralPaid[_applicant].collateral = 0;
             license.approved = true;
 
-            if (scoringContract.getIsPerformanceDataSet(_applicant)) scoringContract.setInitialScore(_applicant);
+            if (!SCORING.getIsInitialScoreSet(_applicant)) SCORING.setInitialScore(_applicant);
             emit LicenseApproved(_applicant, licenseId);
         }
 
@@ -140,9 +140,9 @@ contract License is AccessControl, ILicense {
 
     function setScoringContract(address _scoringContract) external onlyRole(MANAGER_ROLE) {
         if (!_isContract(_scoringContract)) revert ScoringContractMustBeContract();
-        if (address(scoringContract) != address(0)) revert ScoringContractAlreadySet();
+        if (address(SCORING) != address(0)) revert ScoringContractAlreadySet();
 
-        scoringContract = IScoring(_scoringContract);
+        SCORING = IScoring(_scoringContract);
         emit ScoringContractUpdated(_scoringContract);
     }
 
@@ -205,6 +205,12 @@ contract License is AccessControl, ILicense {
 
     function getLicenseIsPending(address _entity) public view returns (bool) {
         return getLicenseStatus(_entity) == LicenseState.PENDING;
+    }
+
+    function getLicenseExpirationTime(address _entity) public view returns (uint256) {
+        uint256 licenseId = licenseCount[_entity];
+        LicenseInfo storage license = licenses[_entity][licenseId];
+        return license.endTime;
     }
 
     function getLicenseByEntity(address _entity) public view returns (uint256, uint256, bool) {

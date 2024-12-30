@@ -33,7 +33,7 @@ contract Vault is Initializable, ERC4626Upgradeable, OwnableUpgradeable, IVault 
     IERC20Upgradeable public GOIL_TOKEN;
     address public TREASURY;
 
-    bool public isVaultFailed;
+    bool public isVaultSuccess;
 
     uint256 public goilRate;
     uint256 public desiredCap;
@@ -77,43 +77,42 @@ contract Vault is Initializable, ERC4626Upgradeable, OwnableUpgradeable, IVault 
         unlockEndTime = _unlockEndTime;
     }
 
-    function depositToVault(uint256 _amountToDeposit) public {
-        depositToVault(_amountToDeposit, msg.sender);
+    function deposit(uint256 _amountToDeposit) public returns (uint256) {
+        return deposit(_amountToDeposit, msg.sender);
     }
 
-    function withdrawFromVault(uint256 _amountToWithdraw) public {
-        withdrawFromVault(_amountToWithdraw, msg.sender, msg.sender);
+    function withdraw(uint256 _amountToWithdraw) public returns (uint256) {
+        return withdraw(_amountToWithdraw, msg.sender, msg.sender);
     }
 
-    function depositToVault(uint256 _amountToDeposit, address _receiverShares) public {
+    function deposit(uint256 _amountToDeposit, address _receiverShares) public override returns (uint256) {
         uint256 currentTime = block.timestamp;
 
         if (currentTime < startTime) revert VaultNotStarted();
         if (currentTime > fundingEndTime) revert VaultFundingTimeIsEnded();
         if (totalAssets() + _amountToDeposit > desiredCap) revert ExceedsVaultSize();
 
-        super.deposit(_amountToDeposit, _receiverShares);
+        return super.deposit(_amountToDeposit, _receiverShares);
     }
 
-    function withdrawFromVault(uint256 _amountToWithdraw, address _receiver, address _holderShares) public {
+    function withdraw(uint256 _amountToWithdraw, address _receiver, address _holderShares) public override returns (uint256) {
         uint256 currentTime = block.timestamp;
         bool isNotRaisedDesiredCap = currentTime > fundingEndTime && totalAssets() < desiredCap;
 
         if (isNotRaisedDesiredCap) {
-            super.withdraw(_amountToWithdraw, _receiver, _holderShares);
+            return super.withdraw(_amountToWithdraw, _receiver, _holderShares);
         }
 
         if (currentTime <= unlockEndTime) {
             revert VaultIsNotUnlocked();
         }
 
-        if (!isVaultFailed && currentTime > unlockEndTime && totalAssets() < promisedCap) {
-            isVaultFailed = true;
+        if (!isVaultSuccess && currentTime > unlockEndTime && totalAssets() < promisedCap) {
             _asset = GOIL_TOKEN; //! _asset in ERC4626Upgradeable must be internal and not immutable for this case
             SCORING.updateEntityScore();
         }
-
-        super.withdraw(_amountToWithdraw, _receiver, _holderShares);
+        
+        return super.withdraw(_amountToWithdraw, _receiver, _holderShares);
     }
 
     function depositFromEntity() external onlyOwner {
@@ -121,19 +120,20 @@ contract Vault is Initializable, ERC4626Upgradeable, OwnableUpgradeable, IVault 
 
         if (currentTime <= fundingEndTime) revert FundingEndTimeIsNotReached();
         
-        uint256 stakingAmount = (promisedCap * STAKING_PERCENTAGE) / MAX_BIPS;
-        uint256 vaultAmount = promisedCap - stakingAmount;
+        uint256 stakingAmount = (desiredCap * STAKING_PERCENTAGE) / MAX_BIPS;
+        IERC20Upgradeable(asset()).safeTransferFrom(msg.sender, address(this), promisedCap);
 
-        IERC20Upgradeable(asset()).safeTransferFrom(msg.sender, address(this), vaultAmount);
+        if (currentTime <= unlockEndTime) isVaultSuccess = true;
 
-        if (!isVaultFailed) {
+        if (isVaultSuccess) {
             SCORING.updateEntityScore();
-        } else {
-            _swap(vaultAmount, address(TREASURY));
-        }
 
-        _swap(stakingAmount, address(this));
-        STAKING.transferReward(stakingAmount);
+            uint256 stakingAmountInGoil = _swap(stakingAmount, address(this));
+            GOIL_TOKEN.approve(address(STAKING), stakingAmountInGoil);
+            STAKING.transferReward(stakingAmountInGoil);
+        } else {
+            _swap(promisedCap, address(TREASURY));
+        }
 
         unlockEndTime = currentTime;
         emit DepositFromEntity(promisedCap);
@@ -143,6 +143,7 @@ contract Vault is Initializable, ERC4626Upgradeable, OwnableUpgradeable, IVault 
         uint256 currentTime = block.timestamp;
 
         if (currentTime <= fundingEndTime) revert FundingEndTimeIsNotReached();
+        if (currentTime >= unlockEndTime) revert VaultIsUnlocked();
         if (totalAssets() < desiredCap) revert InsufficientBalance();
 
         IERC20Upgradeable(asset()).safeTransfer(msg.sender, totalAssets());
@@ -245,6 +246,7 @@ contract Vault is Initializable, ERC4626Upgradeable, OwnableUpgradeable, IVault 
         uint256 amountOutMin = (_amountOut * SLIPPAGE_MULTIPLIER) / MAX_BIPS;
         uint256 deadline = block.timestamp + TRANSACTION_TIMEOUT;
 
+        IERC20Upgradeable(_path[0]).approve(address(ROUTER_V2), _amountIn);
         uint256[] memory amounts = ROUTER_V2.swapExactTokensForTokens(
             _amountIn,
             amountOutMin,
@@ -267,6 +269,7 @@ contract Vault is Initializable, ERC4626Upgradeable, OwnableUpgradeable, IVault 
         uint256 amountOutMin = (_amountOut * SLIPPAGE_MULTIPLIER) / MAX_BIPS;
         uint256 deadline = block.timestamp + TRANSACTION_TIMEOUT;
 
+        IERC20Upgradeable(_tokenIn).approve(address(ROUTER_V3), _amountIn);
         ISwapRouter.ExactInputSingleParams memory params = ISwapRouter
             .ExactInputSingleParams({
                 tokenIn: _tokenIn,

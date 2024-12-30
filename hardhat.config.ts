@@ -5,7 +5,16 @@ import "dotenv/config";
 const { ARBITRUM_SEPOLIA_URL, ARBITRUM_SCANER_KEY, PRIVATE_KEY } = process.env;
 
 const config: HardhatUserConfig = {
-  solidity: "0.8.27",
+  solidity: {
+    version: "0.8.27",
+    settings: {
+      optimizer: {
+        enabled: true,
+        runs: 200
+      },
+      viaIR: true
+    }
+  },
   networks: {
     arbitrumSepolia: {
       url: ARBITRUM_SEPOLIA_URL || "",

@@ -28,7 +28,7 @@ contract Staking is IStaking {
     mapping(address => UserStake) public userStakes;
 
     modifier onlyVault() {
-        if (!VAULT_FACTORY.getIsValidVault(msg.sender)) revert OnlyVaultFactory();
+        if (!VAULT_FACTORY.getIsValidVault(msg.sender)) revert OnlyVault();
         _;
     }
 
@@ -45,6 +45,8 @@ contract Staking is IStaking {
         if (!_isContract(_rewardToken)) revert RewardTokenMustBeContract();
         if (block.number >= _endStakingBlock) revert EndStakingBlockMustBeInTheFuture();
 
+        VAULT_FACTORY = IVaultFactory(_vaultFactory);
+        TREASURY = ITreasury(_treasury);
         STAKING_TOKEN_PRECISION = 10 ** IERC20Metadata(_stakingToken).decimals();
         STAKING_TOKEN = IERC20(_stakingToken);
         REWARD_TOKEN = IERC20(_rewardToken);
@@ -114,7 +116,6 @@ contract Staking is IStaking {
     function transferReward(uint256 _amount) external onlyVault {
         _updateRewards();
         REWARD_TOKEN.transferFrom(msg.sender, address(this), _amount);
-
         // TODO: update rewardPerBlock or implement other feature
 
         emit RewardTransferred(msg.sender, _amount);

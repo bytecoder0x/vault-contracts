@@ -20,9 +20,9 @@ contract Treasury is AccessControl, ITreasury {
     IVaultFactory public immutable VAULT_FACTORY;
     IERC20 public immutable GOIL_TOKEN;
     IOracle public immutable ORACLE;
-    ILicense public immutable LICENSE;
-    address public immutable SCORING;
-    address public immutable STAKING;
+    ILicense public LICENSE;
+    address public SCORING;
+    address public STAKING;
 
     uint256 public totalRefundableAmount;
 
@@ -48,35 +48,33 @@ contract Treasury is AccessControl, ITreasury {
         _;
     }
 
+    modifier withSetupNecessaryContracts() {
+        if (SCORING == address(0)) revert ScoringContractNotSet();
+        if (STAKING == address(0)) revert StakingContractNotSet();
+        if (address(LICENSE) == address(0)) revert LicenseContractNotSet();
+        _;
+    }
+
     constructor(
         address _goilToken,
-        address _scoring,
-        address _staking,
-        address _license,
         address _oracle,
         address _vaultFactory,
         address _admin
     ) {
         if (!_isContract(_goilToken)) revert GoilTokenMustBeContract();
         if (!_isContract(_oracle)) revert OracleMustBeContract();
-        if (!_isContract(_scoring)) revert ScoringMustBeContract();
-        if (!_isContract(_staking)) revert StakingMustBeContract();
-        if (!_isContract(_license)) revert LicenseMustBeContract();
         if (!_isContract(_vaultFactory)) revert VaultFactoryMustBeContract();
         if (_admin == address(0)) revert AdminCannotBeZeroAddress();
 
         VAULT_FACTORY = IVaultFactory(_vaultFactory);
-        LICENSE = ILicense(_license);
         ORACLE = IOracle(_oracle);
         GOIL_TOKEN = IERC20(_goilToken);
-        SCORING = _scoring;
-        STAKING = _staking;
 
         _grantRole(DEFAULT_ADMIN_ROLE, _admin);
         _grantRole(MANAGER_ROLE, _admin);
     }
 
-    function depositCollateral(address _entity, uint256 _amount) public onlyLicense {
+    function depositCollateral(address _entity, uint256 _amount) public onlyLicense withSetupNecessaryContracts {
         if (_amount == 0) revert ZeroAmountToDeposit();
 
         collateral[_entity].collateralLocked += _amount;
@@ -85,7 +83,7 @@ contract Treasury is AccessControl, ITreasury {
         emit CollateralDeposited(msg.sender, _entity, address(0), _amount);
     }
 
-    function depositCollateral(address _vault) external onlyVaultFactory {
+    function depositCollateral(address _vault) external onlyVaultFactory withSetupNecessaryContracts {
         IVault vault = IVault(_vault);
         address entity = vault.owner();
 
@@ -99,7 +97,7 @@ contract Treasury is AccessControl, ITreasury {
         emit CollateralDeposited(entity, entity, _vault, requiredCollateral);
     }
 
-    function withdrawCollateral(uint256 _amount) external {
+    function withdrawCollateral(uint256 _amount) external withSetupNecessaryContracts {
         if (_amount == 0) revert ZeroAmountToWithdraw();
 
         address entity = msg.sender;
@@ -116,7 +114,7 @@ contract Treasury is AccessControl, ITreasury {
         emit CollateralWithdrawn(entity, _amount);
     }
 
-    function unlockCollateral(address _vault) external onlyScoring {
+    function unlockCollateral(address _vault) external onlyScoring withSetupNecessaryContracts {
         IVault vault = IVault(_vault);
         address entity = vault.owner();
         uint256 collateralAmount = VAULT_FACTORY.getCollateralAmount(_vault);
@@ -125,7 +123,7 @@ contract Treasury is AccessControl, ITreasury {
         emit CollateralUnlocked(entity, collateralAmount);
     }
 
-    function fundVault(address _vault) external onlyScoring {
+    function fundVault(address _vault) external onlyScoring withSetupNecessaryContracts {
         if (!VAULT_FACTORY.getIsValidVault(_vault)) revert VaultIsNotValid();
 
         address entity = VAULT_FACTORY.getVaultEntity(_vault);
@@ -142,7 +140,7 @@ contract Treasury is AccessControl, ITreasury {
         emit VaultFunded(_vault, refundableAmount);
     }
 
-    function unstakeTokens(address _recipient, uint256 _amount) external onlyStaking {
+    function unstakeTokens(address _recipient, uint256 _amount) external onlyStaking withSetupNecessaryContracts {
         if (_recipient == address(0)) revert RecipientCannotBeZeroAddress();
         if (_amount == 0) revert ZeroAmountToTransfer();
 
@@ -157,6 +155,30 @@ contract Treasury is AccessControl, ITreasury {
     function withdrawAllTokens(address _token) external onlyRole(MANAGER_ROLE) {
         uint256 balance = IERC20(_token).balanceOf(address(this));
         IERC20(_token).safeTransfer(msg.sender, balance);
+    }
+
+    function setScoringContract(address _scoring) external onlyRole(MANAGER_ROLE) {
+        if (SCORING != address(0)) revert ScoringAlreadySet();
+        if (!_isContract(_scoring)) revert ScoringMustBeContract();
+
+        SCORING = _scoring;
+        emit ScoringContractUpdated(_scoring);
+    }
+
+    function setStakingContract(address _staking) external onlyRole(MANAGER_ROLE) {
+        if (STAKING != address(0)) revert StakingAlreadySet();
+        if (!_isContract(_staking)) revert StakingMustBeContract();
+
+        STAKING = _staking;
+        emit StakingContractUpdated(_staking);
+    }
+
+    function setLicenseContract(address _license) external onlyRole(MANAGER_ROLE) {
+        if (address(LICENSE) != address(0)) revert LicenseAlreadySet();
+        if (!_isContract(_license)) revert LicenseMustBeContract();
+
+        LICENSE = ILicense(_license);
+        emit LicenseContractUpdated(_license);
     }
 
     function getRequiredCollateral(uint256 _poolSize) public view returns (uint256) {
