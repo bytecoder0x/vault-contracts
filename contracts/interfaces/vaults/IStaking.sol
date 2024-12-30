@@ -17,7 +17,7 @@ interface IStaking {
     error NoStakedTokens();
     error NoRewardToClaim();
     error InsufficientRewardPool();
-    error OnlyVaultFactory();
+    error OnlyVault();
     error EndStakingBlockMustBeInTheFuture();
 
     event Staked(address indexed staker, uint256 amount);

@@ -5,7 +5,7 @@ import {IERC4626Upgradeable} from "@openzeppelin/contracts-upgradeable/interface
 import {IERC20Upgradeable} from "@openzeppelin/contracts-upgradeable/token/ERC20/IERC20Upgradeable.sol";
 import {IScoring} from "./IScoring.sol";
 
-interface IVault is IERC4626Upgradeable {
+interface IVault {
     enum Swap {
         V2,
         V3_500,
@@ -21,6 +21,7 @@ interface IVault is IERC4626Upgradeable {
     error InsufficientBalance();
     error FundingEndTimeIsNotReached();
     error VaultIsNotUnlocked();
+    error VaultIsUnlocked();
     error VaultIsNotFailed();
 
     event DepositFromEntity(uint256 amount);
@@ -28,7 +29,7 @@ interface IVault is IERC4626Upgradeable {
 
     function SCORING() external view returns (IScoring);
     function GOIL_TOKEN() external view returns (IERC20Upgradeable);
-    function isVaultFailed() external view returns (bool);
+    function isVaultSuccess() external view returns (bool);
     function goilRate() external view returns (uint256);
     function desiredCap() external view returns (uint256);
     function promisedCap() external view returns (uint256);
@@ -53,10 +54,8 @@ interface IVault is IERC4626Upgradeable {
         uint256 _fundingEndTime,
         uint256 _unlockEndTime
     ) external;
-    function depositToVault(uint256 _amountToDeposit) external;
-    function withdrawFromVault(uint256 _amountToWithdraw) external;
-    function depositToVault(uint256 _amountToDeposit, address _receiverShares) external;
-    function withdrawFromVault(uint256 _amountToWithdraw, address _receiver, address _holderShares) external;
+    function deposit(uint256 _amountToDeposit) external returns (uint256);
+    function withdraw(uint256 _amountToWithdraw) external returns (uint256);
     function depositFromEntity() external;
     function withdrawToEntity() external;
 }
