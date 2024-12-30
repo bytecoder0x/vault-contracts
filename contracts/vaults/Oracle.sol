@@ -20,13 +20,13 @@ contract Oracle is AccessControl, IOracle {
 
     uint32 public secondsAgo = 30 minutes;
 
-    constructor(address _goilToken, address _purchaseToken, uint24 _poolFee, address _factoryV3, address _admin) {
-        if (_isContract(_purchaseToken)) revert PurchaseTokenMustBeContract();
-        if (_isContract(_goilToken)) revert GoilTokenMustBeContract();
-        if (_isContract(_factoryV3)) revert UniswapFactoryMustBeContract();
+    constructor(address _factoryV3, address _admin, address _goilToken, address _purchaseToken, uint24 _poolFee) {
+        if (!_isContract(_purchaseToken)) revert PurchaseTokenMustBeContract();
+        if (!_isContract(_goilToken)) revert GoilTokenMustBeContract();
+        if (!_isContract(_factoryV3)) revert UniswapFactoryMustBeContract();
 
         FACTORY_V3 = IUniswapV3Factory(_factoryV3);
-
+        
         pool = FACTORY_V3.getPool(_purchaseToken, _goilToken, _poolFee);
         if (pool == address(0)) revert PoolDoesNotExist();
 
