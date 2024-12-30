@@ -34,6 +34,7 @@ contract Vault is Initializable, ERC4626Upgradeable, OwnableUpgradeable, IVault 
     address public TREASURY;
 
     bool public isVaultSuccess;
+    bool public isVaultLiquidated;
 
     uint256 public goilRate;
     uint256 public desiredCap;
@@ -97,21 +98,25 @@ contract Vault is Initializable, ERC4626Upgradeable, OwnableUpgradeable, IVault 
 
     function withdraw(uint256 _amountToWithdraw, address _receiver, address _holderShares) public override returns (uint256) {
         uint256 currentTime = block.timestamp;
-        bool isNotRaisedDesiredCap = currentTime > fundingEndTime && totalAssets() < desiredCap;
+        bool isNotRaisedDesiredCap = currentTime < unlockEndTime && currentTime > fundingEndTime && totalAssets() < desiredCap;
 
         if (isNotRaisedDesiredCap) {
             return super.withdraw(_amountToWithdraw, _receiver, _holderShares);
         }
 
-        if (currentTime <= unlockEndTime) {
-            revert VaultIsNotUnlocked();
-        }
+        if (currentTime < unlockEndTime) revert VaultIsNotUnlocked();
+        
+        if (isLiquidatable()) {
+            isVaultLiquidated = true;
+        
+            //! _tryGetAssetDecimals, _asset and _underlyingDecimals in ERC4626Upgradeable must be internal for this case
+            (bool success, uint8 assetDecimals) = _tryGetAssetDecimals(GOIL_TOKEN);
+            _underlyingDecimals = success ? assetDecimals : 18;
+            _asset = GOIL_TOKEN;
 
-        if (!isVaultSuccess && currentTime > unlockEndTime && totalAssets() < promisedCap) {
-            _asset = GOIL_TOKEN; //! _asset in ERC4626Upgradeable must be internal and not immutable for this case
             SCORING.updateEntityScore();
         }
-        
+
         return super.withdraw(_amountToWithdraw, _receiver, _holderShares);
     }
 
@@ -148,6 +153,15 @@ contract Vault is Initializable, ERC4626Upgradeable, OwnableUpgradeable, IVault 
 
         IERC20Upgradeable(asset()).safeTransfer(msg.sender, totalAssets());
         emit WithdrawToEntity(totalAssets());
+    }
+
+    function isLiquidatable() public view returns (bool) {
+        uint256 currentTime = block.timestamp;
+
+        return !isVaultLiquidated 
+            && !isVaultSuccess 
+            && currentTime > unlockEndTime 
+            && totalAssets() < promisedCap;
     }
 
     function owner() public view override(IVault, OwnableUpgradeable) returns (address) {
