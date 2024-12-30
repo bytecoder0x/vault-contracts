@@ -58,133 +58,6 @@ describe.only("Main Flow", function () {
 
 	const END_STAKING_BLOCK = 100000000;
 
-	const deployAllContracts = async () => {
-		const [admin, entity, user1, user2, user3, user4, holder1, holder2, holder3] = await ethers.getSigners();
-		const MockERC20Factory = await ethers.getContractFactory("MockERC20");
-
-		const goilToken = await MockERC20Factory.deploy(INITIAL_SUPPLY);
-		await goilToken.waitForDeployment();
-
-		const stableToken = await MockERC20Factory.deploy(INITIAL_SUPPLY);
-		await stableToken.waitForDeployment();
-
-		const QuadataFactory = await ethers.getContractFactory("MockQuadata");
-		const quadata = await QuadataFactory.deploy();
-		await quadata.waitForDeployment();
-
-		const mockFactoryFactory = await ethers.getContractFactory("MockFactory");
-		const mockFactory = await mockFactoryFactory.deploy();
-		await mockFactory.waitForDeployment();
-
-		const mockPoolFactory = await ethers.getContractFactory("MockPool");
-		const mockPool = await mockPoolFactory.deploy(goilToken.target, stableToken.target);
-		await mockPool.waitForDeployment();
-		await mockFactory.setPool(goilToken.target, stableToken.target, 5_00, mockPool.target);
-
-		const mockRouterV2Factory = await ethers.getContractFactory("MockRouterV2");
-		const mockRouterV2 = await mockRouterV2Factory.deploy();
-		await mockRouterV2.waitForDeployment();
-
-		const mockRouterV3Factory = await ethers.getContractFactory("MockRouterV3");
-		const mockRouterV3 = await mockRouterV3Factory.deploy();
-		await mockRouterV3.waitForDeployment();
-
-		const mockQuoterFactory = await ethers.getContractFactory("MockQuoterV2");
-		const mockQuoter = await mockQuoterFactory.deploy();
-		await mockQuoter.waitForDeployment();
-
-		const oracleFactory = await ethers.getContractFactory("Oracle");
-		const oracle = await oracleFactory.deploy(mockFactory.target, admin.address, goilToken.target, stableToken.target, 5_00);
-		await oracle.waitForDeployment();
-
-		const vaultFactoryFactory = await ethers.getContractFactory("VaultFactory");
-		const vaultFactory = await vaultFactoryFactory.deploy(
-			admin.address,
-			stableToken.target,
-			goilToken.target,
-			oracle.target,
-			mockRouterV2.target,
-			mockRouterV3.target,
-			mockQuoter.target
-		);
-		await vaultFactory.waitForDeployment();
-
-		const TreasuryFactory = await ethers.getContractFactory("Treasury");
-		const treasury = await TreasuryFactory.deploy(goilToken.target, oracle.target, vaultFactory.target, admin.address);
-		await treasury.waitForDeployment();
-
-		const LicenseFactory = await ethers.getContractFactory("License");
-		const license = await LicenseFactory.deploy(
-			admin.address,
-			quadata.target,
-			goilToken.target,
-			treasury.target,
-			APPLICATION_FEE,
-			LICENSE_MONTHLY_FEE
-		);
-		await license.waitForDeployment();
-
-		const scoringFactory = await ethers.getContractFactory("Scoring");
-		const scoring = await scoringFactory.deploy(
-			admin.address,
-			vaultFactory.target,
-			treasury.target,
-			license.target,
-			goilToken.target,
-			THRESHOLD_CAPITAL,
-			THRESHOLD_COLLATERAL,
-			MARKET_CONDITION_RATIO
-		);
-		await scoring.waitForDeployment();
-
-		const stakingFactory = await ethers.getContractFactory("Staking");
-		const staking = await stakingFactory.deploy(
-			vaultFactory.target,
-			treasury.target,
-			goilToken.target,
-			goilToken.target,
-			END_STAKING_BLOCK
-		);
-		await staking.waitForDeployment();
-
-		await vaultFactory.setScoringContract(scoring.target);
-		await vaultFactory.setStakingContract(staking.target);
-		await vaultFactory.setTreasuryContract(treasury.target);
-		await vaultFactory.setLicenseContract(license.target);
-
-		await treasury.setScoringContract(scoring.target);
-		await treasury.setStakingContract(staking.target);
-		await treasury.setLicenseContract(license.target);
-
-		await license.setScoringContract(scoring.target);
-
-		return {
-			admin,
-			entity,
-			user1,
-			user2,
-			user3,
-			user4,
-			holder1,
-			holder2,
-			holder3,
-			goilToken,
-			stableToken,
-			mockFactory,
-			mockPool,
-			mockRouterV2,
-			mockRouterV3,
-			mockQuoter,
-			quadata,
-			oracle,
-			vaultFactory,
-			treasury,
-			license,
-			scoring,
-			staking,
-		};
-	};
-
 	beforeEach(async () => {
 		const fixture = await loadFixture(deployAllContracts);
 		admin = fixture.admin;
@@ -212,7 +85,7 @@ describe.only("Main Flow", function () {
 		staking = fixture.staking;
 	});
 
-	it("Checks all functionality from getting license and successful vault repayment", async function () {
+	it("Checks all functionality from getting license to successful vault repayment", async function () {
 		const collateralAmount = ethers.parseEther("10000"); // this amount will be used for calculating initial score
 		const totalFeeWithCollateral = collateralAmount + LICENSE_MONTHLY_FEE * 12n + APPLICATION_FEE;
 		const licenseEndTime = (await time.latest()) + 12 * 31 * 24 * 60 * 60; // 12 months
@@ -394,8 +267,8 @@ describe.only("Main Flow", function () {
         await vault.connect(user3)["withdraw(uint256)"](maxPossibleWithdrawForUser3);
         await vault.connect(user4)["withdraw(uint256)"](maxPossibleWithdrawForUser4);
 
-        // we have delta of 1 because of rounding in _convertToAssets (ERC4626)
-        // it means for our case users profit equals to 2.499...k$ instead of 2.5k$
+        // we have delta of "1" because of rounding in _convertToAssets (ERC4626)
+        // it means for our case users profit equals to 27.4999...k$ instead of 27.5k$
         expect(await stableToken.balanceOf(user1.address)).closeTo(totalStableAmountWithProfit, 1);
         expect(await stableToken.balanceOf(user2.address)).closeTo(totalStableAmountWithProfit, 1);
         expect(await stableToken.balanceOf(user3.address)).closeTo(totalStableAmountWithProfit, 1);
@@ -403,4 +276,252 @@ describe.only("Main Flow", function () {
 
         // Successfully vault is repaid and users got their profit ^:)
 	});
+
+    it.only("Checks all functionality from getting license to vault liquidation", async function () {
+        const collateralAmount = ethers.parseEther("10000")
+		const totalFeeWithCollateral = collateralAmount + LICENSE_MONTHLY_FEE * 12n + APPLICATION_FEE;
+		const licenseEndTime = (await time.latest()) + 12 * 31 * 24 * 60 * 60; // 12 months
+		const tokensForTreasury = ethers.parseEther("10000000");
+
+		const thirtyPercentOfTotalSupply = ((await goilToken.totalSupply()) * 100n) / 333n;
+		await goilToken.transfer(holder1.address, thirtyPercentOfTotalSupply);
+		await goilToken.transfer(holder2.address, thirtyPercentOfTotalSupply);
+		await goilToken.transfer(holder3.address, thirtyPercentOfTotalSupply);
+		await goilToken.mint(entity.address, totalFeeWithCollateral);
+		await goilToken.mint(treasury.target, tokensForTreasury); // 10mln
+		await goilToken.connect(entity).approve(license.target, totalFeeWithCollateral);
+		await quadata.mint(entity.address, 1);
+
+        // all things the same as in successful vault repayment (license, initial score, create vault, etc.)
+		await license.connect(entity).submitLicense(licenseEndTime, collateralAmount);
+		await scoring.connect(admin).setPerformanceData(entity.address, 50_000, 60_000);
+
+		await license.connect(holder1).vote(entity.address);
+		await license.connect(holder2).vote(entity.address);
+		await license.connect(holder3).vote(entity.address);
+
+		const poolSize = ethers.parseEther("100000"); // 100k
+		const requiredCollateral = await treasury.getRequiredCollateral(poolSize);
+		await goilToken.mint(entity.address, requiredCollateral);
+		await goilToken.connect(entity).approve(treasury.target, requiredCollateral);
+
+		const rate = 11_00; // 11%
+		const startTime = (await time.latest()) + 24 * 60 * 60; // in 1 day
+		const fundingPeriod = 14 * 24 * 60 * 60; // 14 days
+		const unlockPeriod = 3 * 31 * 24 * 60 * 60; // 3 months
+		const desiredCap = poolSize;
+		await vaultFactory.connect(entity).createVault(rate, desiredCap, startTime, fundingPeriod, unlockPeriod);
+		const vaults = await vaultFactory.getAllVaults();
+		const vault = await ethers.getContractAt("Vault", vaults[0].vault);
+
+		const amountToDeposit = ethers.parseEther("25000"); // 25k$
+		await stableToken.connect(user1).mint(user1.address, amountToDeposit);
+		await stableToken.connect(user2).mint(user2.address, amountToDeposit);
+		await stableToken.connect(user3).mint(user3.address, amountToDeposit);
+		await stableToken.connect(user4).mint(user4.address, amountToDeposit);
+		await stableToken.connect(user1).approve(vault.target, amountToDeposit);
+		await stableToken.connect(user2).approve(vault.target, amountToDeposit);
+		await stableToken.connect(user3).approve(vault.target, amountToDeposit);
+		await stableToken.connect(user4).approve(vault.target, amountToDeposit);
+
+		await time.increaseTo(startTime);
+		await vault.connect(user1)["deposit(uint256)"](amountToDeposit);
+		await vault.connect(user2)["deposit(uint256)"](amountToDeposit);
+		await vault.connect(user3)["deposit(uint256)"](amountToDeposit);
+		await vault.connect(user4)["deposit(uint256)"](amountToDeposit);
+
+		// users got shares (1:1 ratio -> 1 share = 1$)
+		expect(await vault.balanceOf(user1.address)).to.equal(amountToDeposit);
+		expect(await vault.balanceOf(user2.address)).to.equal(amountToDeposit);
+		expect(await vault.balanceOf(user3.address)).to.equal(amountToDeposit);
+		expect(await vault.balanceOf(user4.address)).to.equal(amountToDeposit);
+
+		// wait for the funding period to end
+		await time.increaseTo(startTime + fundingPeriod + 1);
+
+		// entity can withdraw all the funds
+		await vault.connect(entity).withdrawToEntity();
+		expect(await stableToken.balanceOf(entity.address)).to.equal(amountToDeposit * 4n);
+
+        // wait for the unlock period to end and vault is not funded
+		await time.increaseTo(startTime + unlockPeriod + 1);
+
+        //! 1$GOIL = 1$ since we have 1:1 ratio of stable token and goil token
+        await vault.connect(user1)["withdraw(uint256)"](amountToDeposit);
+        await vault.connect(user2)["withdraw(uint256)"](amountToDeposit);
+        await vault.connect(user3)["withdraw(uint256)"](amountToDeposit);
+        await vault.connect(user4)["withdraw(uint256)"](amountToDeposit);
+
+        expect(await stableToken.balanceOf(user1.address)).to.equal(0);
+        expect(await stableToken.balanceOf(user2.address)).to.equal(0);
+        expect(await stableToken.balanceOf(user3.address)).to.equal(0);
+        expect(await stableToken.balanceOf(user4.address)).to.equal(0);
+
+        // we have delta of "1" because of rounding in _convertToAssets (ERC4626)
+        // it means for our case users can get 24.999k...$GOIL instead of 25k $GOIL
+        //! 1$GOIL = 1$ since we have 1:1 ratio
+        console.log(await goilToken.balanceOf(user1.address));
+        expect(await goilToken.balanceOf(user1.address)).closeTo(amountToDeposit, 1);
+        expect(await goilToken.balanceOf(user2.address)).closeTo(amountToDeposit, 1);
+        expect(await goilToken.balanceOf(user3.address)).closeTo(amountToDeposit, 1);
+        expect(await goilToken.balanceOf(user4.address)).closeTo(amountToDeposit, 1);
+
+        // entity score is updated
+
+        // formula for calculating new score:
+
+        // lastScore = 0.8
+
+        // newScore = (lastScore + (poolSizeRatio * historicalPerformance)) * penalties
+        // ! score cannot be greater than 1
+
+        // poolSizeRatio = poolSizeWeight * poolSize / maxPoolSize (0.1 * 100k / 800k = 0.0125)
+
+        // historyScoreWeights = [0.1, 0.1, 0.1, 0.2, 0.5]  // we can get only last five scores
+        // we can get only one score from history, then we use weights 0.5 for last score
+        // accumulatedHistoricalScore / maxScoreByEntity (0.5 * 0.8 / 0.8 = 0.5)
+
+        // example if we have 2 scores in history: [0.8, 0.7]
+        // then accumulatedHistoricalScore = 0.7 * 0.5 + 0.8 * 0.2 = 0.35 + 0.16 = 0.51
+        // maxScoreByEntity = 0.8 -> 0.51 / 0.8 = 0.6375
+        
+        //! penalties = exp^(-totalFailedVaults) (exp^(-1) = 0.36787)
+
+        // newScore = (0.8 + (0.0125 * 0.5)) * 0.36787 = 0.29659
+
+        const updatedScores = await scoring.getScores(entity.address);
+        expect(updatedScores.length).to.equal(2);
+        expect(Number(updatedScores[1]) / Number(100_000)).to.equal(0.29659);
+
+        // entity scores is decreasing, it means that entity can create pool with lower size
+        const previousMaxPoolSize = ethers.parseEther("800000"); // 800k
+        expect(await scoring.getMaxPoolSize(entity.address)).to.be.lessThan(previousMaxPoolSize);
+    });
+
+    const deployAllContracts = async () => {
+		const [admin, entity, user1, user2, user3, user4, holder1, holder2, holder3] = await ethers.getSigners();
+		const MockERC20Factory = await ethers.getContractFactory("MockERC20");
+
+		const goilToken = await MockERC20Factory.deploy(INITIAL_SUPPLY);
+		await goilToken.waitForDeployment();
+
+		const stableToken = await MockERC20Factory.deploy(INITIAL_SUPPLY);
+		await stableToken.waitForDeployment();
+
+		const QuadataFactory = await ethers.getContractFactory("MockQuadata");
+		const quadata = await QuadataFactory.deploy();
+		await quadata.waitForDeployment();
+
+		const mockFactoryFactory = await ethers.getContractFactory("MockFactory");
+		const mockFactory = await mockFactoryFactory.deploy();
+		await mockFactory.waitForDeployment();
+
+		const mockPoolFactory = await ethers.getContractFactory("MockPool");
+		const mockPool = await mockPoolFactory.deploy(goilToken.target, stableToken.target);
+		await mockPool.waitForDeployment();
+		await mockFactory.setPool(goilToken.target, stableToken.target, 5_00, mockPool.target);
+
+		const mockRouterV2Factory = await ethers.getContractFactory("MockRouterV2");
+		const mockRouterV2 = await mockRouterV2Factory.deploy();
+		await mockRouterV2.waitForDeployment();
+
+		const mockRouterV3Factory = await ethers.getContractFactory("MockRouterV3");
+		const mockRouterV3 = await mockRouterV3Factory.deploy();
+		await mockRouterV3.waitForDeployment();
+
+		const mockQuoterFactory = await ethers.getContractFactory("MockQuoterV2");
+		const mockQuoter = await mockQuoterFactory.deploy();
+		await mockQuoter.waitForDeployment();
+
+		const oracleFactory = await ethers.getContractFactory("Oracle");
+		const oracle = await oracleFactory.deploy(mockFactory.target, admin.address, goilToken.target, stableToken.target, 5_00);
+		await oracle.waitForDeployment();
+
+		const vaultFactoryFactory = await ethers.getContractFactory("VaultFactory");
+		const vaultFactory = await vaultFactoryFactory.deploy(
+			admin.address,
+			stableToken.target,
+			goilToken.target,
+			oracle.target,
+			mockRouterV2.target,
+			mockRouterV3.target,
+			mockQuoter.target
+		);
+		await vaultFactory.waitForDeployment();
+
+		const TreasuryFactory = await ethers.getContractFactory("Treasury");
+		const treasury = await TreasuryFactory.deploy(goilToken.target, oracle.target, vaultFactory.target, admin.address);
+		await treasury.waitForDeployment();
+
+		const LicenseFactory = await ethers.getContractFactory("License");
+		const license = await LicenseFactory.deploy(
+			admin.address,
+			quadata.target,
+			goilToken.target,
+			treasury.target,
+			APPLICATION_FEE,
+			LICENSE_MONTHLY_FEE
+		);
+		await license.waitForDeployment();
+
+		const scoringFactory = await ethers.getContractFactory("Scoring");
+		const scoring = await scoringFactory.deploy(
+			admin.address,
+			vaultFactory.target,
+			treasury.target,
+			license.target,
+			goilToken.target,
+			THRESHOLD_CAPITAL,
+			THRESHOLD_COLLATERAL,
+			MARKET_CONDITION_RATIO
+		);
+		await scoring.waitForDeployment();
+
+		const stakingFactory = await ethers.getContractFactory("Staking");
+		const staking = await stakingFactory.deploy(
+			vaultFactory.target,
+			treasury.target,
+			goilToken.target,
+			goilToken.target,
+			END_STAKING_BLOCK
+		);
+		await staking.waitForDeployment();
+
+		await vaultFactory.setScoringContract(scoring.target);
+		await vaultFactory.setStakingContract(staking.target);
+		await vaultFactory.setTreasuryContract(treasury.target);
+		await vaultFactory.setLicenseContract(license.target);
+
+		await treasury.setScoringContract(scoring.target);
+		await treasury.setStakingContract(staking.target);
+		await treasury.setLicenseContract(license.target);
+
+		await license.setScoringContract(scoring.target);
+
+		return {
+			admin,
+			entity,
+			user1,
+			user2,
+			user3,
+			user4,
+			holder1,
+			holder2,
+			holder3,
+			goilToken,
+			stableToken,
+			mockFactory,
+			mockPool,
+			mockRouterV2,
+			mockRouterV3,
+			mockQuoter,
+			quadata,
+			oracle,
+			vaultFactory,
+			treasury,
+			license,
+			scoring,
+			staking,
+		};
+	};
 });

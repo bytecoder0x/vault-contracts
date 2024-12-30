@@ -14,6 +14,9 @@ interface ITreasury {
     event CollateralUnlocked(address indexed entity, uint256 amount);
     event CollateralDeposited(address indexed depositor, address indexed entity, address indexed vault, uint256 amount);
     event CollateralWithdrawn(address indexed entity, uint256 amount);
+    event ScoringContractUpdated(address indexed scoring);
+    event StakingContractUpdated(address indexed staking);
+    event LicenseContractUpdated(address indexed license);
 
     error OracleMustBeContract();
     error ZeroAmountToFundVault();
@@ -35,6 +38,12 @@ interface ITreasury {
     error CannotWithdrawDuringActiveLicense();
     error InsufficientCollateral();
     error VaultIsNotValid();
+    error ScoringContractNotSet();
+    error StakingContractNotSet();
+    error LicenseContractNotSet();
+    error ScoringAlreadySet();
+    error StakingAlreadySet();
+    error LicenseAlreadySet();
     
     function collateral(address _entity) external view returns (uint256, uint256);
 
@@ -46,5 +55,8 @@ interface ITreasury {
     function unstakeTokens(address _recipient, uint256 _amount) external;
     function withdrawTokens(address _recipient, address _token, uint256 _amount) external;
     function withdrawAllTokens(address _token) external;
+    function setScoringContract(address _scoring) external;
+    function setStakingContract(address _staking) external;
+    function setLicenseContract(address _license) external;
     function getRequiredCollateral(uint256 _poolSize) external view returns (uint256);
 }

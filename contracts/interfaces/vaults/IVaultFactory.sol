@@ -23,12 +23,17 @@ interface IVaultFactory {
     error TreasuryContractNotSet();
     error StakingContractAlreadySet();
     error StakingContractNotSet();
+    error LicenseContractAlreadySet();
+    error LicenseContractNotSet();
+    error LicenseContractMustBeContract();
     error ScoringContractMustBeContract();
     error TreasuryContractMustBeContract();
     error StakingContractMustBeContract();
     error QuoterMustBeContract();
+    error UnlockPeriodTooLong();
 
     struct VaultInfo {
+        address vault;
         address entity;
         uint256 interestRate;
         uint256 desiredCap;
@@ -39,6 +44,7 @@ interface IVaultFactory {
         uint256 refundableAmount;
     }
 
+    event LicenseContractSet(address indexed licenseContract);
     event ScoringContractSet(address indexed scoringContract);
     event TreasuryContractSet(address indexed treasuryContract);
     event StakingContractSet(address indexed stakingContract);
@@ -51,8 +57,9 @@ interface IVaultFactory {
     function SCORING() external view returns (IScoring);
     function MAX_BIPS() external view returns (uint256);
     function COLLATERAL_PERCENTAGE() external view returns (uint256);
-    function vaults(address vault) external view returns (
-        address entity,
+    function vaults(address _vault) external view returns (
+        address vault,
+        address entity, 
         uint256 interestRate,
         uint256 desiredCap,
         uint256 startTime,
@@ -72,6 +79,8 @@ interface IVaultFactory {
 
     function setScoringContract(address _scoringContract) external;
     function setTreasuryContract(address _treasuryContract) external;
+    function setStakingContract(address _stakingContract) external;
+    function setLicenseContract(address _licenseContract) external;
     function getIsValidVault(address _vault) external view returns (bool);
     function getVaultEntity(address _vault) external view returns (address);
     function getCollateralAmount(address _vault) external view returns (uint256);
