@@ -28,7 +28,7 @@ interface ILicense {
     event Voted(address indexed entity, address indexed voter, uint256 indexed licenseId, uint256 votes);
     event AppliedForLicense(address indexed entity, uint256 indexed licenseId, uint256 startTime, uint256 endTime, uint256 licenseFee, uint256 collateral);
     event LicenseApproved(address indexed entity, uint256 indexed licenseId);
-    event RefundedLicenseFee(address indexed entity, uint256 amount);
+    event RefundedLicenseFeeAndCollateral(address indexed entity, uint256 amount);
     event ApplicationFeeUpdated(uint256 amount);
     event LicenseMonthlyFeeUpdated(uint256 amount);
     event RequiredVotesPercentageUpdated(uint256 percentage);
@@ -48,7 +48,7 @@ interface ILicense {
     error LicensePeriodTooLong();
     error ApplicantMustHaveQadrataKYB();
     error LicenseAlreadySubmitted();
-    error NoLicenseFeeToRefund();
+    error NoTokensToRefund();
     error CannotRefundActiveOrPendingLicense();
     error NoGOILTokensToVote();
     error LicenseIsNotPending();
