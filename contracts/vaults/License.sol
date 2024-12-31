@@ -129,13 +129,13 @@ contract License is AccessControl, ILicense {
 
     function refundLicenseFeeAndCollateral() external {
         uint256 refundableAmount = getRefundableAmount(msg.sender);
-        if (refundableAmount == 0) revert NoLicenseFeeToRefund();
+        if (refundableAmount == 0) revert NoTokensToRefund();
 
         licenseFeeAndCollateralPaid[msg.sender].licenseFee = 0;
         licenseFeeAndCollateralPaid[msg.sender].collateral = 0;
 
         GOIL_TOKEN.transfer(msg.sender, refundableAmount);
-        emit RefundedLicenseFee(msg.sender, refundableAmount);
+        emit RefundedLicenseFeeAndCollateral(msg.sender, refundableAmount);
     }
 
     function setScoringContract(address _scoringContract) external onlyRole(MANAGER_ROLE) {
