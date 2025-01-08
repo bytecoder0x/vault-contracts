@@ -72,10 +72,10 @@ contract VaultFactory is Ownable, IVaultFactory {
         uint256 _desiredCap,
         uint256 _startTime,
         uint256 _fundingPeriod,
-        uint256 _unlockPeriod
+        uint256 _lockPeriod
     ) external withSetupNecessaryContracts {
         uint256 fundingEndTime = _startTime + _fundingPeriod;
-        uint256 unlockEndTime = _startTime + _unlockPeriod;
+        uint256 unlockEndTime = fundingEndTime + _lockPeriod;
         
         if (_desiredCap == 0) revert DesiredCapCannotBeZero();
         if (_interestRate == 0) revert InterestRateCannotBeZero();
@@ -86,7 +86,7 @@ contract VaultFactory is Ownable, IVaultFactory {
         if (LICENSE.getLicenseExpirationTime(msg.sender) < unlockEndTime) revert UnlockPeriodTooLong();
 
         uint256 maxPoolSize = SCORING.getMaxPoolSize(msg.sender);
-        uint256 maxAllowedPoolSize = maxPoolSize + (_interestRate * _unlockPeriod) / MAX_BIPS;
+        uint256 maxAllowedPoolSize = maxPoolSize + (_interestRate * _lockPeriod) / MAX_BIPS;
         uint256 promisedCap = (_desiredCap * (MAX_BIPS + _interestRate)) / MAX_BIPS; // TODO: mb improve logic promisedCap
 
         if (_desiredCap > maxAllowedPoolSize) revert NooAllowedPoolSize();

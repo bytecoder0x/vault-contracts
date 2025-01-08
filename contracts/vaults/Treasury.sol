@@ -101,7 +101,7 @@ contract Treasury is AccessControl, ITreasury {
         if (_amount == 0) revert ZeroAmountToWithdraw();
 
         address entity = msg.sender;
-
+        // TODO: mb improving this logic
         if (LICENSE.getLicenseIsActive(entity)) {
             if (collateral[entity].collateralUnlocked < _amount) revert InsufficientCollateral();
             collateral[entity].collateralUnlocked -= _amount;
@@ -118,8 +118,10 @@ contract Treasury is AccessControl, ITreasury {
         IVault vault = IVault(_vault);
         address entity = vault.owner();
         uint256 collateralAmount = VAULT_FACTORY.getCollateralAmount(_vault);
-
-        collateral[entity].collateralUnlocked += collateralAmount;
+        // TODO: decrease totalRefundableAmount? since its function called if vault is success
+        // TODO: mb decrease collateralLocked?
+        
+        collateral[entity].collateralUnlocked += collateralAmount; 
         emit CollateralUnlocked(entity, collateralAmount);
     }
 

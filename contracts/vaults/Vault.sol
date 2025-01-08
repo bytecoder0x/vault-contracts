@@ -15,6 +15,7 @@ import {IScoring} from "../interfaces/vaults/IScoring.sol";
 import {IVault} from "../interfaces/vaults/IVault.sol";
 import {IStaking} from "../interfaces/vaults/IStaking.sol";
 
+// TODO: enum for state of vault
 contract Vault is Initializable, ERC4626Upgradeable, OwnableUpgradeable, IVault {
     using SafeERC20Upgradeable for IERC20Upgradeable;
 
@@ -98,9 +99,8 @@ contract Vault is Initializable, ERC4626Upgradeable, OwnableUpgradeable, IVault 
 
     function withdraw(uint256 _amountToWithdraw, address _receiver, address _holderShares) public override returns (uint256) {
         uint256 currentTime = block.timestamp;
-        bool isNotRaisedDesiredCap = currentTime < unlockEndTime && currentTime > fundingEndTime && totalAssets() < desiredCap;
-
-        if (isNotRaisedDesiredCap) {
+        
+        if (isNotRaisedDesiredCap()) {
             return super.withdraw(_amountToWithdraw, _receiver, _holderShares);
         }
 
@@ -162,6 +162,14 @@ contract Vault is Initializable, ERC4626Upgradeable, OwnableUpgradeable, IVault 
             && !isVaultSuccess 
             && currentTime > unlockEndTime 
             && totalAssets() < promisedCap;
+    }
+
+    function isNotRaisedDesiredCap() public view returns (bool) {
+        uint256 currentTime = block.timestamp;
+
+        return currentTime < unlockEndTime
+            && currentTime > fundingEndTime
+            && totalAssets() < desiredCap;
     }
 
     function owner() public view override(IVault, OwnableUpgradeable) returns (address) {

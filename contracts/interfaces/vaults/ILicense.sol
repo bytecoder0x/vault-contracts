@@ -75,6 +75,6 @@ interface ILicense {
     function getLicenseIsPending(address _entity) external view returns (bool);
     function getLicenseExpirationTime(address _entity) external view returns (uint256);
     function getLicenseVotingPercentage(address _entity) external view returns (uint256);
-    function getLicenseByEntity(address _entity) external view returns (uint256, uint256, bool);
+    function getLicenseByEntity(address _entity) external view returns (uint8, uint256, uint256, uint256, uint256, uint256);
     function getLicenseVotesByUser(address _entity, uint256 _licenseId, address _voter) external view returns (uint256);
 }

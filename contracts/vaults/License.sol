@@ -19,6 +19,8 @@ contract License is AccessControl, ILicense {
     ITreasury public immutable TREASURY;
     IScoring public SCORING;
 
+    uint256 public immutable GOIL_SUPPLY;
+
     uint256 public requiredVotesPercentage = 66_00;
     uint256 public votingPeriod = 7 days;
     uint256 public licenseExpirationLimit = 365 days; // 12 months
@@ -55,7 +57,8 @@ contract License is AccessControl, ILicense {
         TREASURY = ITreasury(_treasury);
         applicationFee = _applicationFee;
         licenseMonthlyFee = _licenseMonthlyFee;
-        requiredVotesThreshold = (GOIL_TOKEN.totalSupply() * requiredVotesPercentage) / PERCENTAGE_DENOMINATOR;
+        GOIL_SUPPLY = GOIL_TOKEN.totalSupply();
+        requiredVotesThreshold = (GOIL_SUPPLY * requiredVotesPercentage) / PERCENTAGE_DENOMINATOR;
 
         _grantRole(DEFAULT_ADMIN_ROLE, _admin);
         _grantRole(MANAGER_ROLE, _admin);
@@ -213,11 +216,20 @@ contract License is AccessControl, ILicense {
         return license.endTime;
     }
 
-    function getLicenseByEntity(address _entity) public view returns (uint256, uint256, bool) {
+    function getLicenseByEntity(address _entity) public view returns (uint8, uint256, uint256, uint256, uint256, uint256) {
         uint256 licenseId = licenseCount[_entity];
         LicenseInfo storage license = licenses[_entity][licenseId];
+        
+        uint256 totalVotesAgainst = GOIL_SUPPLY - license.totalVotes;
+        uint256 votingPercentage = getLicenseVotingPercentage(_entity);
+        uint8 status = uint8(getLicenseStatus(_entity));
 
-        return (license.startTime, license.endTime, license.approved);
+        return (status, license.totalVotes, totalVotesAgainst, votingPercentage, license.startTime, license.endTime);
+    }
+
+    function getLastLicenseVotesByUser(address _entity, address _voter) public view returns (uint256) {
+        uint256 licenseId = licenseCount[_entity];
+        return getLicenseVotesByUser(_entity, licenseId, _voter);
     }
 
     function getLicenseVotesByUser(address _entity, uint256 _licenseId, address _voter) public view returns (uint256) {
@@ -229,7 +241,7 @@ contract License is AccessControl, ILicense {
         uint256 licenseId = licenseCount[_entity];
         LicenseInfo storage license = licenses[_entity][licenseId];
 
-        return (license.totalVotes * PERCENTAGE_DENOMINATOR) / GOIL_TOKEN.totalSupply();
+        return (license.totalVotes * PERCENTAGE_DENOMINATOR) / GOIL_SUPPLY;
     }
 
     function getRefundableAmount(address _entity) public view returns (uint256) {

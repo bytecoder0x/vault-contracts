@@ -117,7 +117,7 @@ contract Staking is IStaking {
         _updateRewards();
         REWARD_TOKEN.transferFrom(msg.sender, address(this), _amount);
         // TODO: update rewardPerBlock or implement other feature
-
+        
         emit RewardTransferred(msg.sender, _amount);
     }
 
