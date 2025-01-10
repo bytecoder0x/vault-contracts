@@ -183,7 +183,7 @@ contract TokenSale is ITokenSale, Ownable, Pausable {
         _unpause();
     }
 
-    function getCurrentRoundId() external view returns (uint256) {
+    function getCurrentRoundId() public view returns (uint256) {
         uint256 currentTime = block.timestamp;
         for (uint256 i = 1; i <= rounds.length; i++) {
             Round memory round = roundsById[i];
@@ -195,7 +195,7 @@ contract TokenSale is ITokenSale, Ownable, Pausable {
         return 0;
     }
 
-    function getLastFinishedRoundId() external view returns (uint256) {
+    function getLastFinishedRoundId() public view returns (uint256) {
         uint256 currentTime = block.timestamp;
         uint256 lastFinishedRound = 0;
         
@@ -231,6 +231,20 @@ contract TokenSale is ITokenSale, Ownable, Pausable {
         uint256 pricePerToken = priceInStable * 10 ** 18 / formatedPriceETH;
         
         return pricePerToken;
+    }
+
+    function getCurrentTokenPrice() public view returns (uint256) {
+        uint256 roundId = getCurrentRoundId();
+
+        if (roundId == 0) {
+            roundId = getLastFinishedRoundId();
+        }
+
+        if (roundId == 0) {
+            return 0;
+        }
+
+        return roundsById[roundId].price;
     }
 
     function getTotalEarnedForRound(uint256 _roundId) public view roundExists(_roundId) returns (uint256) {

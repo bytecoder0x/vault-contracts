@@ -5,7 +5,7 @@ import { HardhatEthersSigner } from "@nomicfoundation/hardhat-ethers/signers";
 import { loadFixture } from "@nomicfoundation/hardhat-network-helpers";
 import { time } from "@nomicfoundation/hardhat-network-helpers";
 
-describe.only("TokenSale", function () {
+describe("TokenSale", function () {
     let tokenSale: TokenSale;
     let saleToken: MockERC20;
     let usdcToken: MockERC20;
@@ -446,6 +446,7 @@ describe.only("TokenSale", function () {
             expect(userPurchases[2].roundId).to.be.eq(thirdRoundId);
             expect(userPurchases[2].tokenAmount).to.be.eq(thirdBuyAmount);
             expect(await tokenSale.getCurrentRoundId()).to.be.eq(3);
+            expect(await tokenSale.getCurrentTokenPrice()).to.be.eq(TOKEN_PRICE / 2n);
             expect(await tokenSale.getLastFinishedRoundId()).to.be.eq(2);
 
             expect(await usdcToken.balanceOf(owner.address)).to.be.eq(ownerUsdcBalanceBefore + firstPaymentAmount);
@@ -457,6 +458,7 @@ describe.only("TokenSale", function () {
             await tokenVesting.connect(buyer).claimTokens();
 
             expect(await tokenSale.getCurrentRoundId()).to.be.eq(0);
+            expect(await tokenSale.getCurrentTokenPrice()).to.be.eq(TOKEN_PRICE / 2n);
             expect(await tokenSale.getLastFinishedRoundId()).to.be.eq(3);
             expect(await saleToken.balanceOf(buyer.address)).to.be.eq(firstBuyAmount + secondBuyAmount + thirdBuyAmount);
             expect(await saleToken.balanceOf(tokenVesting.target)).to.be.eq(0);
