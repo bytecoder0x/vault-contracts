@@ -122,12 +122,14 @@ contract TokenSale is ITokenSale, Ownable, Pausable {
             WETH_TOKEN.deposit{value: msg.value}();
             uint256 wethBalanceAfter = WETH_TOKEN.balanceOf(address(this));
             
-            if (wethBalanceAfter > wethBalanceBefore + paymentAmount) {
-                uint256 excess = wethBalanceAfter - (wethBalanceBefore + paymentAmount);
+            uint256 actualPayment = wethBalanceAfter - wethBalanceBefore;
+            if (actualPayment > paymentAmount) {
+                uint256 excess = actualPayment - paymentAmount;
                 WETH_TOKEN.transfer(msg.sender, excess);
+                actualPayment = paymentAmount;
             }
 
-            IERC20(_paymentToken).safeTransfer(owner(), paymentAmount);
+            IERC20(_paymentToken).safeTransfer(owner(), actualPayment);
         } else {
             if (msg.value != 0) revert EthNotAllowedForErc20Purchase();
             IERC20(_paymentToken).safeTransferFrom(msg.sender, owner(), paymentAmount);
