@@ -1,7 +1,7 @@
 import { ethers } from "hardhat";
 
 export const deployAllContracts = async () => {
-    const [admin, entity, user1, user2, user3, user4, holder1, holder2, holder3] = await ethers.getSigners();
+    const [admin, entity, user1, user2, user3, user4] = await ethers.getSigners();
     const MockERC20Factory = await ethers.getContractFactory("MockERC20");
 
     const INITIAL_SUPPLY = ethers.parseEther("10000000");
@@ -22,11 +22,6 @@ export const deployAllContracts = async () => {
 
     const stableToken = await MockERC20Factory.deploy(INITIAL_SUPPLY);
     await stableToken.waitForDeployment();
-
-    const thirtyPercentOfTotalSupply = ((await goilToken.totalSupply()) * 100n) / 333n;
-    await goilToken.transfer(holder1.address, thirtyPercentOfTotalSupply);
-    await goilToken.transfer(holder2.address, thirtyPercentOfTotalSupply);
-    await goilToken.transfer(holder3.address, thirtyPercentOfTotalSupply);
 
     const QuadataFactory = await ethers.getContractFactory("MockQuadata");
     const quadata = await QuadataFactory.deploy();
@@ -125,9 +120,6 @@ export const deployAllContracts = async () => {
         user2,
         user3,
         user4,
-        holder1,
-        holder2,
-        holder3,
         goilToken,
         stableToken,
         mockFactory,
