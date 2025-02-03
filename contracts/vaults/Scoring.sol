@@ -190,8 +190,12 @@ contract Scoring is AccessControl, IScoring {
         maxPoolSize = (lastScore * thresholdCapital) / SCORE_PRECISION;
     }
 
-    function getIsInitialScoreSet(address _entity) public view returns (bool) {
-        return scores[_entity].length > 0;
+    function getIsReadyToSetInitialScore(address _entity) public view returns (bool) {
+        uint256 reputationRatio = performanceData[_entity].reputationRatio;
+        uint256 financialHealthRatio = performanceData[_entity].financialHealthRatio;
+        uint256 totalScores = scores[_entity].length;
+        
+        return totalScores == 0 && reputationRatio != 0 && financialHealthRatio != 0;
     }
 
     function _getHistoricalPerformance(address _entity) private view returns (uint256 historicalPerformance) {

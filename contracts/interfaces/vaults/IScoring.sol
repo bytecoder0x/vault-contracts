@@ -41,6 +41,6 @@ interface IScoring {
     function setThresholdCollateral(uint256 _thresholdCollateral) external;
     function setThresholdCapital(uint256 _thresholdCapital) external;
     function setMarketConditionRatio(uint256 _marketConditionRatio) external;
-    function getIsInitialScoreSet(address _entity) external view returns (bool);
+    function getIsReadyToSetInitialScore(address _entity) external view returns (bool);
     function getMaxPoolSize(address _entity) external view returns (uint256 maxPoolSize);
 }
