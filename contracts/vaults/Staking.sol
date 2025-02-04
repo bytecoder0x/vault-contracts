@@ -8,6 +8,9 @@ import {ITreasury} from "../interfaces/vaults/ITreasury.sol";
 import {IStaking} from "../interfaces/vaults/IStaking.sol";
 
 contract Staking is IStaking {
+    uint256 public constant MAX_BIPS = 100_00;
+    uint256 public constant ONE_MONTH_IN_BLOCKS = 214772;
+
     IERC20 public immutable STAKING_TOKEN;
     IERC20 public immutable REWARD_TOKEN;
 
@@ -36,21 +39,18 @@ contract Staking is IStaking {
         address _vaultFactory,
         address _treasury,
         address _stakingToken,
-        address _rewardToken,
-        uint256 _endStakingBlock
+        address _rewardToken
     ) {
         if (!_isContract(_vaultFactory)) revert VaultFactoryMustBeContract();
         if (!_isContract(_treasury)) revert TreasuryMustBeContract();
         if (!_isContract(_stakingToken)) revert StakingTokenMustBeContract();
         if (!_isContract(_rewardToken)) revert RewardTokenMustBeContract();
-        if (block.number >= _endStakingBlock) revert EndStakingBlockMustBeInTheFuture();
 
         VAULT_FACTORY = IVaultFactory(_vaultFactory);
         TREASURY = ITreasury(_treasury);
         STAKING_TOKEN_PRECISION = 10 ** IERC20Metadata(_stakingToken).decimals();
         STAKING_TOKEN = IERC20(_stakingToken);
         REWARD_TOKEN = IERC20(_rewardToken);
-        endStakingBlock = _endStakingBlock;
     }
 
     function stakeTokens(uint256 _amount) external {
@@ -116,9 +116,31 @@ contract Staking is IStaking {
     function transferReward(uint256 _amount) external onlyVault {
         _updateRewards();
         REWARD_TOKEN.transferFrom(msg.sender, address(this), _amount);
-        // TODO: update rewardPerBlock or implement other feature
+        
+        uint256 currentBlock = block.number;
+        if (currentBlock > endStakingBlock) {
+            endStakingBlock = currentBlock + ONE_MONTH_IN_BLOCKS;
+        } else {
+            endStakingBlock += ONE_MONTH_IN_BLOCKS;
+        }
         
         emit RewardTransferred(msg.sender, _amount);
+    }
+
+    function getRewardPerBlock() public view returns (uint256) {
+        return block.number > endStakingBlock ? 0 : rewardPerBlock;
+    }
+
+    function getCurrentAPR() external view returns (uint256) {
+        uint256 currentRewardPerBlock = getRewardPerBlock();
+        uint256 oneYearInBlocks = 12 * ONE_MONTH_IN_BLOCKS;
+        uint256 rewardPerYear = currentRewardPerBlock * oneYearInBlocks;
+
+        if (totalStaked == 0) {
+            return 0;
+        }
+
+        return (rewardPerYear * MAX_BIPS) / totalStaked;
     }
 
     function getPendingRewardByUser(address _user) public view returns (uint256) {
@@ -156,11 +178,18 @@ contract Staking is IStaking {
             return;
         }
 
-        uint256 elapsedBlocks = currentBlock - lastRewardBlock;
-        uint256 rewards = elapsedBlocks * rewardPerBlock;
+        uint256 activeRewardBlock = currentBlock > endStakingBlock ? endStakingBlock : currentBlock;
+        uint256 elapsedBlocks = activeRewardBlock > lastRewardBlock ? activeRewardBlock - lastRewardBlock : 0;
 
-        accRewardPerShare += (rewards * STAKING_TOKEN_PRECISION) / totalStaked;
-        lastRewardBlock = currentBlock;
+        if (elapsedBlocks > 0) {
+            uint256 rewards = elapsedBlocks * rewardPerBlock;
+            accRewardPerShare += (rewards * STAKING_TOKEN_PRECISION) / totalStaked;
+            lastRewardBlock = activeRewardBlock;
+        }
+
+        if (currentBlock >= endStakingBlock) {
+            rewardPerBlock = 0;
+        }
     }
 
     function _isContract(address _address) private view returns (bool) {
