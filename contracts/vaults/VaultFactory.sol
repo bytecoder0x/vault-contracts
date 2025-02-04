@@ -137,7 +137,8 @@ contract VaultFactory is AccessControl, IVaultFactory {
         vaultsByEntity[msg.sender].push(newVault);
         vaults[address(vault)] = newVault;
         allVaults.push(newVault);
-        TREASURY.depositCollateral(address(vault)); // TODO: mb impove logic collateral
+        
+        TREASURY.depositCollateral(msg.sender, requiredCollateral, refundableAmount);
 
         emit VaultCreated(address(vault), msg.sender, newVault);
     }

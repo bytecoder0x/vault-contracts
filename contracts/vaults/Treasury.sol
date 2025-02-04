@@ -48,6 +48,12 @@ contract Treasury is AccessControl, ITreasury {
         _;
     }
 
+    modifier withLockedRefundableAmount(uint256 _amountToWithdraw) {
+        if (getGoilBalance() - _amountToWithdraw < totalRefundableAmount) revert InsufficientRefundableAmount();
+        _;
+
+    }
+
     modifier withSetupNecessaryContracts() {
         if (SCORING == address(0)) revert ScoringContractNotSet();
         if (STAKING == address(0)) revert StakingContractNotSet();
@@ -74,54 +80,57 @@ contract Treasury is AccessControl, ITreasury {
         _grantRole(MANAGER_ROLE, _admin);
     }
 
-    function depositCollateral(address _entity, uint256 _amount) public onlyLicense withSetupNecessaryContracts {
+    function depositCollateral(
+        address _entity,
+        uint256 _amount
+    ) public onlyLicense withSetupNecessaryContracts {
         if (_amount == 0) revert ZeroAmountToDeposit();
 
         collateral[_entity].collateralLocked += _amount;
         GOIL_TOKEN.transferFrom(msg.sender, address(this), _amount);
 
-        emit CollateralDeposited(msg.sender, _entity, address(0), _amount);
+        emit CollateralDeposited(_entity, _amount);
     }
 
-    function depositCollateral(address _vault) external onlyVaultFactory withSetupNecessaryContracts {
-        IVault vault = IVault(_vault);
-        address entity = vault.owner();
+    function depositCollateral(
+        address _entity,
+        uint256 _requiredCollateral,
+        uint256 _refundableAmount
+    ) external onlyVaultFactory withSetupNecessaryContracts {
+        collateral[_entity].collateralLocked += _requiredCollateral;
+        totalRefundableAmount += _refundableAmount;
 
-        uint256 requiredCollateral = VAULT_FACTORY.getCollateralAmount(_vault);
-        uint256 refundableAmount = VAULT_FACTORY.getRefundableAmount(_vault);
-
-        collateral[entity].collateralLocked += requiredCollateral;
-        totalRefundableAmount += refundableAmount;
-
-        GOIL_TOKEN.transferFrom(entity, address(this), requiredCollateral);
-        emit CollateralDeposited(entity, entity, _vault, requiredCollateral);
+        GOIL_TOKEN.transferFrom(_entity, address(this), _requiredCollateral);
+        emit CollateralDeposited(_entity, _requiredCollateral);
     }
 
-    function withdrawCollateral(uint256 _amount) external withSetupNecessaryContracts {
-        if (_amount == 0) revert ZeroAmountToWithdraw();
-
+    function withdrawCollateral() external withSetupNecessaryContracts {
         address entity = msg.sender;
-        // TODO: mb improving this logic
+        uint256 collateralAmount;
+
         if (LICENSE.getLicenseIsActive(entity)) {
-            if (collateral[entity].collateralUnlocked < _amount) revert InsufficientCollateral();
-            collateral[entity].collateralUnlocked -= _amount;
+            collateralAmount = collateral[entity].collateralUnlocked;
+            collateral[entity].collateralUnlocked = 0;
+        } else {
+            collateralAmount = collateral[entity].collateralLocked + collateral[entity].collateralUnlocked;
+            collateral[entity].collateralLocked = 0;
+            collateral[entity].collateralUnlocked = 0;
         }
 
-        if (collateral[entity].collateralLocked < _amount) revert InsufficientCollateral();
-        collateral[entity].collateralLocked -= _amount;
-
-        GOIL_TOKEN.transfer(entity, _amount);
-        emit CollateralWithdrawn(entity, _amount);
+        GOIL_TOKEN.transfer(entity, collateralAmount);
+        emit CollateralWithdrawn(entity, collateralAmount);
     }
 
     function unlockCollateral(address _vault) external onlyScoring withSetupNecessaryContracts {
-        IVault vault = IVault(_vault);
-        address entity = vault.owner();
+        address entity = IVault(_vault).owner();
         uint256 collateralAmount = VAULT_FACTORY.getCollateralAmount(_vault);
-        // TODO: decrease totalRefundableAmount? since its function called if vault is success
-        // TODO: mb decrease collateralLocked?
-        
+        uint256 refundableAmount = VAULT_FACTORY.getRefundableAmount(_vault);
+
+        totalRefundableAmount -= refundableAmount;
+
+        collateral[entity].collateralLocked -= collateralAmount;
         collateral[entity].collateralUnlocked += collateralAmount; 
+
         emit CollateralUnlocked(entity, collateralAmount);
     }
 
@@ -142,7 +151,15 @@ contract Treasury is AccessControl, ITreasury {
         emit VaultFunded(_vault, refundableAmount);
     }
 
-    function unstakeTokens(address _recipient, uint256 _amount) external onlyStaking withSetupNecessaryContracts {
+    function unstakeTokens(
+        address _recipient,
+        uint256 _amount
+    )
+        external
+        onlyStaking
+        withSetupNecessaryContracts
+        withLockedRefundableAmount(_amount)
+    {
         if (_recipient == address(0)) revert RecipientCannotBeZeroAddress();
         if (_amount == 0) revert ZeroAmountToTransfer();
 
@@ -151,10 +168,18 @@ contract Treasury is AccessControl, ITreasury {
     }
 
     function withdrawTokens(address _recipient, address _token, uint256 _amount) external onlyRole(MANAGER_ROLE) {
+        if (_token == address(GOIL_TOKEN) && getGoilBalance() - _amount < totalRefundableAmount) {
+            revert InsufficientRefundableAmount();
+        }
+
         IERC20(_token).safeTransfer(_recipient, _amount);
     }
 
     function withdrawAllTokens(address _token) external onlyRole(MANAGER_ROLE) {
+        if (_token == address(GOIL_TOKEN) && totalRefundableAmount > 0) {
+            revert InsufficientRefundableAmount();
+        }
+
         uint256 balance = IERC20(_token).balanceOf(address(this));
         IERC20(_token).safeTransfer(msg.sender, balance);
     }
@@ -195,8 +220,13 @@ contract Treasury is AccessControl, ITreasury {
         return defaultCollateral;        
     }
 
+    function getGoilBalance() public view returns (uint256) {
+        return GOIL_TOKEN.balanceOf(address(this));
+    }
+
     function _isContract(address _address) private view returns (bool) {
         uint32 size;
+
         assembly {
             size := extcodesize(_address)
         }
