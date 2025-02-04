@@ -97,6 +97,9 @@ contract VaultFactory is AccessControl, IVaultFactory {
 
         if (_desiredCap > maxAllowedPoolSize) revert NooAllowedPoolSize();
 
+        uint256 refundableAmount = ORACLE.getPaymentAmountForTokens(_desiredCap);
+        uint256 requiredCollateral = TREASURY.getRequiredCollateral(_desiredCap);
+
         Vault vault = Vault(VAULT_IMPLEMENTATION.clone());
         vault.initialize(
             msg.sender,
@@ -113,11 +116,9 @@ contract VaultFactory is AccessControl, IVaultFactory {
             _startTime,
             fundingEndTime,
             unlockEndTime,
+            refundableAmount,
             stakingPercentage
         );
-
-        uint256 refundableAmount = ORACLE.getPaymentAmountForTokens(_desiredCap);
-        uint256 requiredCollateral = TREASURY.getRequiredCollateral(_desiredCap);
 
         VaultInfo memory newVault = VaultInfo({
             vault: address(vault),

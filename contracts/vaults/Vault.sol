@@ -31,6 +31,7 @@ contract Vault is Initializable, ERC4626Upgradeable, OwnableUpgradeable, IVault 
     IStaking public STAKING;
     IERC20Upgradeable public GOIL_TOKEN;
     address public TREASURY;
+    address public DEPOSIT_TOKEN;
 
     bool public isVaultSuccess;
     bool public isVaultLiquidated;
@@ -42,6 +43,7 @@ contract Vault is Initializable, ERC4626Upgradeable, OwnableUpgradeable, IVault 
     uint256 public fundingEndTime;
     uint256 public unlockEndTime;
     uint256 public totalDeposits;
+    uint256 public refundableAmountInGoil;
     uint256 public stakingPercentage;
 
     function initialize(
@@ -59,6 +61,7 @@ contract Vault is Initializable, ERC4626Upgradeable, OwnableUpgradeable, IVault 
         uint256 _startTime,
         uint256 _fundingEndTime,
         uint256 _unlockEndTime,
+        uint256 _refundableAmountInGoil,
         uint256 _stakingPercentage
     ) external initializer {
         __ERC4626_init(IERC20Upgradeable(_depositToken));
@@ -68,6 +71,7 @@ contract Vault is Initializable, ERC4626Upgradeable, OwnableUpgradeable, IVault 
         SCORING = IScoring(_scoring);
         STAKING = IStaking(_staking);
         GOIL_TOKEN = IERC20Upgradeable(_goilToken);
+        DEPOSIT_TOKEN = _depositToken;
         TREASURY = _treasury;
         ROUTER_V2 = IUniswapV2Router01(_routerV2);
         ROUTER_V3 = ISwapRouter(_routerV3);
@@ -77,6 +81,7 @@ contract Vault is Initializable, ERC4626Upgradeable, OwnableUpgradeable, IVault 
         startTime = _startTime;
         fundingEndTime = _fundingEndTime;
         unlockEndTime = _unlockEndTime;
+        refundableAmountInGoil = _refundableAmountInGoil;
         stakingPercentage = _stakingPercentage;
     }
 
@@ -109,11 +114,8 @@ contract Vault is Initializable, ERC4626Upgradeable, OwnableUpgradeable, IVault 
         
         if (isLiquidatable()) {
             isVaultLiquidated = true;
-        
-            //! _tryGetAssetDecimals, _asset and _underlyingDecimals in ERC4626Upgradeable must be internal for this case
-            (bool success, uint8 assetDecimals) = _tryGetAssetDecimals(GOIL_TOKEN);
-            _underlyingDecimals = success ? assetDecimals : 18;
-            _asset = GOIL_TOKEN;
+            
+            _updateAsset(address(GOIL_TOKEN));
 
             SCORING.updateEntityScore();
         }
@@ -125,17 +127,38 @@ contract Vault is Initializable, ERC4626Upgradeable, OwnableUpgradeable, IVault 
         uint256 currentTime = block.timestamp;
 
         if (currentTime <= fundingEndTime) revert FundingEndTimeIsNotReached();
-        if (currentTime <= unlockEndTime) isVaultSuccess = true;
 
-        IERC20Upgradeable(asset()).safeTransferFrom(msg.sender, address(this), promisedCap);
+        if (!isVaultLiquidated) isVaultSuccess = true;
+
         if (isVaultSuccess) {
             SCORING.updateEntityScore();
+
+            IERC20Upgradeable(asset()).safeTransferFrom(msg.sender, address(this), promisedCap);
 
             uint256 stakingAmountInGoil = _swap(getAmountForStaking(), address(this));
             GOIL_TOKEN.approve(address(STAKING), stakingAmountInGoil);
             STAKING.transferReward(stakingAmountInGoil);
         } else {
-            _swap(promisedCap, address(TREASURY));
+            uint256 currentBalanceGoil = totalAssets();
+            _updateAsset(DEPOSIT_TOKEN);
+
+            if (refundableAmountInGoil > currentBalanceGoil) {
+                uint256 notWithdrawnGoil = refundableAmountInGoil - currentBalanceGoil;
+
+                uint256 notWithdrawnPercentage = notWithdrawnGoil * MAX_BIPS / refundableAmountInGoil;
+
+                uint256 depositAmount = (promisedCap * notWithdrawnPercentage) / MAX_BIPS;
+                uint256 amountToTreasury = promisedCap - depositAmount;
+
+                IERC20Upgradeable(asset()).safeTransferFrom(msg.sender, address(this), depositAmount);
+
+                _swap(amountToTreasury, TREASURY);
+                GOIL_TOKEN.transfer(TREASURY, notWithdrawnGoil);
+            } else {
+                IERC20Upgradeable(asset()).safeTransferFrom(msg.sender, address(this), promisedCap);
+                GOIL_TOKEN.transfer(TREASURY, currentBalanceGoil);
+            }
+
         }
 
         unlockEndTime = currentTime;
@@ -177,6 +200,13 @@ contract Vault is Initializable, ERC4626Upgradeable, OwnableUpgradeable, IVault 
 
     function owner() public view override(IVault, OwnableUpgradeable) returns (address) {
         return super.owner();
+    }
+
+    function _updateAsset(address _newAsset) private {
+        //! _tryGetAssetDecimals, _asset and _underlyingDecimals in ERC4626Upgradeable must be internal for this case
+        (bool success, uint8 assetDecimals) = _tryGetAssetDecimals(IERC20Upgradeable(_newAsset));
+        _underlyingDecimals = success ? assetDecimals : 18;
+        _asset = IERC20Upgradeable(_newAsset);
     }
 
     function _swap(uint256 _amountIn, address _recipient) private returns (uint256 amountOut) {
