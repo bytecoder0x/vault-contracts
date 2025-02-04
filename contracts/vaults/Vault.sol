@@ -20,8 +20,6 @@ contract Vault is Initializable, ERC4626Upgradeable, OwnableUpgradeable, IVault 
     using SafeERC20Upgradeable for IERC20Upgradeable;
 
     uint256 public constant MAX_BIPS = 100_00;
-    uint256 public constant STAKING_PERCENTAGE = 1_00; // 1%
-
     uint256 public constant SLIPPAGE_MULTIPLIER = MAX_BIPS - 2_00; // slippage == 2%
     uint256 public constant TRANSACTION_TIMEOUT = 15 minutes;
 
@@ -44,6 +42,7 @@ contract Vault is Initializable, ERC4626Upgradeable, OwnableUpgradeable, IVault 
     uint256 public fundingEndTime;
     uint256 public unlockEndTime;
     uint256 public totalDeposits;
+    uint256 public stakingPercentage;
 
     function initialize(
         address _entity,
@@ -59,12 +58,13 @@ contract Vault is Initializable, ERC4626Upgradeable, OwnableUpgradeable, IVault 
         uint256 _promisedCap,
         uint256 _startTime,
         uint256 _fundingEndTime,
-        uint256 _unlockEndTime
+        uint256 _unlockEndTime,
+        uint256 _stakingPercentage
     ) external initializer {
         __ERC4626_init(IERC20Upgradeable(_depositToken));
         __Ownable_init();
         transferOwnership(_entity);
-
+        
         SCORING = IScoring(_scoring);
         STAKING = IStaking(_staking);
         GOIL_TOKEN = IERC20Upgradeable(_goilToken);
@@ -77,6 +77,7 @@ contract Vault is Initializable, ERC4626Upgradeable, OwnableUpgradeable, IVault 
         startTime = _startTime;
         fundingEndTime = _fundingEndTime;
         unlockEndTime = _unlockEndTime;
+        stakingPercentage = _stakingPercentage;
     }
 
     function deposit(uint256 _amountToDeposit) public returns (uint256) {
@@ -124,16 +125,13 @@ contract Vault is Initializable, ERC4626Upgradeable, OwnableUpgradeable, IVault 
         uint256 currentTime = block.timestamp;
 
         if (currentTime <= fundingEndTime) revert FundingEndTimeIsNotReached();
-        
-        uint256 stakingAmount = (desiredCap * STAKING_PERCENTAGE) / MAX_BIPS;
-        IERC20Upgradeable(asset()).safeTransferFrom(msg.sender, address(this), promisedCap);
-
         if (currentTime <= unlockEndTime) isVaultSuccess = true;
 
+        IERC20Upgradeable(asset()).safeTransferFrom(msg.sender, address(this), promisedCap);
         if (isVaultSuccess) {
             SCORING.updateEntityScore();
 
-            uint256 stakingAmountInGoil = _swap(stakingAmount, address(this));
+            uint256 stakingAmountInGoil = _swap(getAmountForStaking(), address(this));
             GOIL_TOKEN.approve(address(STAKING), stakingAmountInGoil);
             STAKING.transferReward(stakingAmountInGoil);
         } else {
@@ -153,6 +151,11 @@ contract Vault is Initializable, ERC4626Upgradeable, OwnableUpgradeable, IVault 
 
         IERC20Upgradeable(asset()).safeTransfer(msg.sender, totalAssets());
         emit WithdrawToEntity(totalAssets());
+    }
+
+    function getAmountForStaking() public view returns (uint256) {
+        uint256 profit = promisedCap - desiredCap;
+        return (profit * stakingPercentage) / MAX_BIPS;
     }
 
     function isLiquidatable() public view returns (bool) {

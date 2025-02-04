@@ -3,6 +3,7 @@ pragma solidity ^0.8.27;
 
 import {IERC4626Upgradeable} from "@openzeppelin/contracts-upgradeable/interfaces/IERC4626Upgradeable.sol";
 import {IERC20Upgradeable} from "@openzeppelin/contracts-upgradeable/token/ERC20/IERC20Upgradeable.sol";
+import {IVaultFactory} from "./IVaultFactory.sol";
 import {IScoring} from "./IScoring.sol";
 
 interface IVault {
@@ -36,6 +37,7 @@ interface IVault {
     function startTime() external view returns (uint256);
     function fundingEndTime() external view returns (uint256);
     function unlockEndTime() external view returns (uint256);
+    function stakingPercentage() external view returns (uint256);
     function owner() external view returns (address);
 
     function initialize(
@@ -52,10 +54,14 @@ interface IVault {
         uint256 _promisedCap,
         uint256 _startTime,
         uint256 _fundingEndTime,
-        uint256 _unlockEndTime
+        uint256 _unlockEndTime,
+        uint256 _stakingPercentage
     ) external;
     function deposit(uint256 _amountToDeposit) external returns (uint256);
     function withdraw(uint256 _amountToWithdraw) external returns (uint256);
     function depositFromEntity() external;
     function withdrawToEntity() external;
+    function getAmountForStaking() external view returns (uint256);
+    function isLiquidatable() external view returns (bool);
+    function isNotRaisedDesiredCap() external view returns (bool);
 }
