@@ -12,6 +12,7 @@ interface IVault {
         V3_500,
         V3_3000,
         V3_10000
+
     }
 
     error WithdrawMoreThanMax();
@@ -55,6 +56,7 @@ interface IVault {
         uint256 _startTime,
         uint256 _fundingEndTime,
         uint256 _unlockEndTime,
+        uint256 _refundableAmountInGoil,
         uint256 _stakingPercentage
     ) external;
     function deposit(uint256 _amountToDeposit) external returns (uint256);

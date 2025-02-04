@@ -12,11 +12,12 @@ interface ITreasury {
     event StakingTokensReplenished(address indexed token, uint256 amount);
     event StakingTokensTransferred(address indexed recipient, uint256 amount);
     event CollateralUnlocked(address indexed entity, uint256 amount);
-    event CollateralDeposited(address indexed depositor, address indexed entity, address indexed vault, uint256 amount);
+    event CollateralDeposited(address indexed entity, uint256 amount);
     event CollateralWithdrawn(address indexed entity, uint256 amount);
     event ScoringContractUpdated(address indexed scoring);
     event StakingContractUpdated(address indexed staking);
     event LicenseContractUpdated(address indexed license);
+
 
     error OracleMustBeContract();
     error ZeroAmountToFundVault();
@@ -37,6 +38,7 @@ interface ITreasury {
     error ZeroAmountToWithdraw();
     error CannotWithdrawDuringActiveLicense();
     error InsufficientCollateral();
+    error InsufficientRefundableAmount();
     error VaultIsNotValid();
     error ScoringContractNotSet();
     error StakingContractNotSet();
@@ -47,9 +49,9 @@ interface ITreasury {
     
     function collateral(address _entity) external view returns (uint256, uint256);
 
-    function depositCollateral(address _vault) external;
+    function depositCollateral(address _entity, uint256 _requiredCollateral, uint256 _refundableAmount) external;
     function depositCollateral(address _entity, uint256 _amount) external;
-    function withdrawCollateral(uint256 _amount) external;
+    function withdrawCollateral() external;
     function unlockCollateral(address _vault) external;
     function fundVault(address _vault) external;
     function unstakeTokens(address _recipient, uint256 _amount) external;
@@ -59,4 +61,5 @@ interface ITreasury {
     function setStakingContract(address _staking) external;
     function setLicenseContract(address _license) external;
     function getRequiredCollateral(uint256 _poolSize) external view returns (uint256);
+    function getGoilBalance() external view returns (uint256);
 }

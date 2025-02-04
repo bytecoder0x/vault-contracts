@@ -5,7 +5,6 @@ import {AccessControl} from "@openzeppelin/contracts/access/AccessControl.sol";
 import {Clones} from "@openzeppelin/contracts/proxy/Clones.sol";
 import {Vault} from "./Vault.sol";
 
-
 import {IVaultFactory} from "../interfaces/vaults/IVaultFactory.sol";
 import {ITreasury} from "../interfaces/vaults/ITreasury.sol";
 import {ILicense} from "../interfaces/vaults/ILicense.sol";
@@ -36,7 +35,10 @@ contract VaultFactory is AccessControl, IVaultFactory {
     uint256 public stakingPercentage = 1_00;
 
     VaultInfo[] public allVaults;
+
+    mapping(address => VaultInfo[]) public vaultsByEntity;
     mapping(address => VaultInfo) public vaults;
+    mapping(address => bool) public isVault;
 
     modifier withSetupNecessaryContracts() {
         if (address(SCORING) == address(0)) revert ScoringContractNotSet();
@@ -93,9 +95,12 @@ contract VaultFactory is AccessControl, IVaultFactory {
 
         uint256 maxPoolSize = SCORING.getMaxPoolSize(msg.sender);
         uint256 maxAllowedPoolSize = maxPoolSize + (_interestRate * _lockPeriod) / MAX_BIPS;
-        uint256 promisedCap = (_desiredCap * (MAX_BIPS + _interestRate)) / MAX_BIPS; // TODO: mb improve logic promisedCap
+        uint256 promisedCap = (_desiredCap * (MAX_BIPS + _interestRate)) / MAX_BIPS;
 
         if (_desiredCap > maxAllowedPoolSize) revert NooAllowedPoolSize();
+
+        uint256 refundableAmount = ORACLE.getPaymentAmountForTokens(_desiredCap);
+        uint256 requiredCollateral = TREASURY.getRequiredCollateral(_desiredCap);
 
         Vault vault = Vault(VAULT_IMPLEMENTATION.clone());
         vault.initialize(
@@ -113,11 +118,9 @@ contract VaultFactory is AccessControl, IVaultFactory {
             _startTime,
             fundingEndTime,
             unlockEndTime,
+            refundableAmount,
             stakingPercentage
         );
-
-        uint256 refundableAmount = ORACLE.getPaymentAmountForTokens(_desiredCap);
-        uint256 requiredCollateral = TREASURY.getRequiredCollateral(_desiredCap);
 
         VaultInfo memory newVault = VaultInfo({
             vault: address(vault),
@@ -131,10 +134,11 @@ contract VaultFactory is AccessControl, IVaultFactory {
             refundableAmount: refundableAmount
         });
 
-        // TODO: add mapping entity -> vaults?
+        vaultsByEntity[msg.sender].push(newVault);
         vaults[address(vault)] = newVault;
         allVaults.push(newVault);
-        TREASURY.depositCollateral(address(vault)); // TODO: mb impove logic collateral
+        
+        TREASURY.depositCollateral(msg.sender, requiredCollateral, refundableAmount);
 
         emit VaultCreated(address(vault), msg.sender, newVault);
     }
@@ -177,10 +181,6 @@ contract VaultFactory is AccessControl, IVaultFactory {
 
         stakingPercentage = _stakingPercentage;
         emit StakingPercentageSet(_stakingPercentage);
-    }
-
-    function getIsValidVault(address _vault) public view returns (bool) {
-        return vaults[_vault].vault != address(0);
     }
 
     function getVaultEntity(address _vault) public view returns (address) {
