@@ -1,10 +1,10 @@
 import { ethers } from "hardhat";
 import { expect } from "chai";
-import { License, MockERC20, MockQuadata, Scoring, Treasury } from "../typechain-types";
+import { License, MockERC20, MockQuadata, Scoring, Treasury } from "../../typechain-types";
 import { HardhatEthersSigner } from "@nomicfoundation/hardhat-ethers/signers";
 import { loadFixture } from "@nomicfoundation/hardhat-network-helpers";
 import { time } from "@nomicfoundation/hardhat-network-helpers";
-import { deployAllContracts } from "./utils.test";
+import { deployAllContracts } from "../utils.test";
 
 describe.only("GoilLicense", function () {
     let license: License;

@@ -1,6 +1,6 @@
 import { ethers } from "hardhat";
 import { expect } from "chai";
-import { TokenSale, MockERC20, MockWETH, TokenVesting, MockV3Aggregator } from "../typechain-types";
+import { TokenSale, MockERC20, MockWETH, TokenVesting, MockV3Aggregator } from "../../typechain-types";
 import { HardhatEthersSigner } from "@nomicfoundation/hardhat-ethers/signers";
 import { loadFixture } from "@nomicfoundation/hardhat-network-helpers";
 import { time } from "@nomicfoundation/hardhat-network-helpers";
