@@ -9,7 +9,7 @@ import {IStaking} from "../interfaces/vaults/IStaking.sol";
 
 contract Staking is IStaking {
     uint256 public constant MAX_BIPS = 100_00;
-    uint256 public constant ONE_MONTH_IN_BLOCKS = 214772;
+    uint256 public constant ONE_MONTH_IN_BLOCKS = 215000;
 
     IERC20 public immutable STAKING_TOKEN;
     IERC20 public immutable REWARD_TOKEN;
@@ -123,7 +123,14 @@ contract Staking is IStaking {
         } else {
             endStakingBlock += ONE_MONTH_IN_BLOCKS;
         }
-        
+
+        totalReward += _amount;
+
+        uint256 distributedReward = accRewardPerShare * totalStaked / STAKING_TOKEN_PRECISION;
+        uint256 currentRewards = totalReward - distributedReward;
+
+        rewardPerBlock = currentRewards / (endStakingBlock - currentBlock);
+
         emit RewardTransferred(msg.sender, _amount);
     }
 
@@ -133,6 +140,11 @@ contract Staking is IStaking {
 
     function getCurrentAPR() external view returns (uint256) {
         uint256 currentRewardPerBlock = getRewardPerBlock();
+
+        if (currentRewardPerBlock == 0) {
+            return 0;
+        }
+
         uint256 oneYearInBlocks = 12 * ONE_MONTH_IN_BLOCKS;
         uint256 rewardPerYear = currentRewardPerBlock * oneYearInBlocks;
 
@@ -150,9 +162,20 @@ contract Staking is IStaking {
         uint256 currentBlock = block.number;
 
         if (currentBlock > lastRewardBlock && totalStaked != 0) {
-            uint256 elapsedBlocks = currentBlock - lastRewardBlock;
-            uint256 rewards = elapsedBlocks * rewardPerBlock;
-            currentAccRewardPerShare += (rewards * STAKING_TOKEN_PRECISION) / totalStaked;
+            uint256 rewardBlockLimit = currentBlock;
+            if (currentBlock > endStakingBlock && endStakingBlock != 0) {
+                rewardBlockLimit = endStakingBlock;
+            }
+
+            uint256 elapsedBlocks = 0;
+            if (rewardBlockLimit > lastRewardBlock) {
+                elapsedBlocks = rewardBlockLimit - lastRewardBlock;
+            }
+
+            if (elapsedBlocks > 0) {
+                uint256 rewards = elapsedBlocks * rewardPerBlock;
+                currentAccRewardPerShare += (rewards * STAKING_TOKEN_PRECISION) / totalStaked;
+            }
         }
 
         return (user.stakedAmount * currentAccRewardPerShare / STAKING_TOKEN_PRECISION) - user.rewardDebt;
@@ -168,7 +191,7 @@ contract Staking is IStaking {
 
     function _updateRewards() private {
         uint256 currentBlock = block.number;
-
+        
         if (currentBlock <= lastRewardBlock) {
             return;
         }
@@ -178,16 +201,23 @@ contract Staking is IStaking {
             return;
         }
 
-        uint256 activeRewardBlock = currentBlock > endStakingBlock ? endStakingBlock : currentBlock;
-        uint256 elapsedBlocks = activeRewardBlock > lastRewardBlock ? activeRewardBlock - lastRewardBlock : 0;
+        uint256 rewardBlockLimit = currentBlock;
+        if (currentBlock > endStakingBlock && endStakingBlock != 0) {
+            rewardBlockLimit = endStakingBlock;
+        }
+
+        uint256 elapsedBlocks = 0;
+        if (rewardBlockLimit > lastRewardBlock) {
+            elapsedBlocks = rewardBlockLimit - lastRewardBlock;
+        }
 
         if (elapsedBlocks > 0) {
             uint256 rewards = elapsedBlocks * rewardPerBlock;
             accRewardPerShare += (rewards * STAKING_TOKEN_PRECISION) / totalStaked;
-            lastRewardBlock = activeRewardBlock;
+            lastRewardBlock = rewardBlockLimit;
         }
 
-        if (currentBlock >= endStakingBlock) {
+        if (currentBlock >= endStakingBlock && endStakingBlock != 0) {
             rewardPerBlock = 0;
         }
     }
