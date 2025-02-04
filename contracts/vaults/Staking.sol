@@ -31,7 +31,7 @@ contract Staking is IStaking {
     mapping(address => UserStake) public userStakes;
 
     modifier onlyVault() {
-        if (!VAULT_FACTORY.getIsValidVault(msg.sender)) revert OnlyVault();
+        if (!VAULT_FACTORY.isVault(msg.sender)) revert OnlyVault();
         _;
     }
 

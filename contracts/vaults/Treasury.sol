@@ -126,7 +126,7 @@ contract Treasury is AccessControl, ITreasury {
     }
 
     function fundVault(address _vault) external onlyScoring withSetupNecessaryContracts {
-        if (!VAULT_FACTORY.getIsValidVault(_vault)) revert VaultIsNotValid();
+        if (!VAULT_FACTORY.isVault(_vault)) revert VaultIsNotValid();
 
         address entity = VAULT_FACTORY.getVaultEntity(_vault);
         uint256 refundableAmount = VAULT_FACTORY.getRefundableAmount(_vault);

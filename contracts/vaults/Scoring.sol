@@ -43,7 +43,7 @@ contract Scoring is AccessControl, IScoring {
     mapping(address => uint256) public totalFails;
 
     modifier onlyVault() {
-        if (!VAULT_FACTORY.getIsValidVault(msg.sender)) revert OnlyVaultFactory();
+        if (!VAULT_FACTORY.isVault(msg.sender)) revert OnlyVaultFactory();
         _;
     }
 

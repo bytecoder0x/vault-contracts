@@ -62,6 +62,7 @@ interface IVaultFactory {
     function MAX_BIPS() external view returns (uint256);
     function COLLATERAL_PERCENTAGE() external view returns (uint256);
     function stakingPercentage() external view returns (uint256);
+    function isVault(address _vault) external view returns (bool);
     function vaults(address _vault) external view returns (
         address vault,
         address entity, 
@@ -87,7 +88,6 @@ interface IVaultFactory {
     function setStakingContract(address _stakingContract) external;
     function setLicenseContract(address _licenseContract) external;
     function setStakingPercentage(uint256 _stakingPercentage) external;
-    function getIsValidVault(address _vault) external view returns (bool);
     function getVaultEntity(address _vault) external view returns (address);
     function getCollateralAmount(address _vault) external view returns (uint256);
     function getRefundableAmount(address _vault) external view returns (uint256);
