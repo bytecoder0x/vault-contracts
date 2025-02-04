@@ -5,7 +5,7 @@ import { HardhatEthersSigner } from "@nomicfoundation/hardhat-ethers/signers";
 import { loadFixture } from "@nomicfoundation/hardhat-network-helpers";
 import { time } from "@nomicfoundation/hardhat-network-helpers";
 
-describe.only("TokenSale", function () {
+describe("TokenSale", function () {
     let tokenSale: TokenSale;
     let saleToken: MockERC20;
     let usdcToken: MockERC20;

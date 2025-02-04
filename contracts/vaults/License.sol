@@ -9,9 +9,10 @@ import {ILicense} from "../interfaces/vaults/ILicense.sol";
 import {ITreasury} from "../interfaces/vaults/ITreasury.sol";
 
 contract License is AccessControl, ILicense {
+    bytes32 public constant LICENSE_MANAGER_ROLE = keccak256("LICENSE_MANAGER_ROLE");
     bytes32 public constant MANAGER_ROLE = keccak256("MANAGER_ROLE");
     bytes32 public constant REQUIRED_KYB = keccak256("IS_BUSINESS");
-
+    
     uint256 public constant PERCENTAGE_DENOMINATOR = 100_00;
 
     IQuadReader public immutable QADRATA_READER;
@@ -19,19 +20,16 @@ contract License is AccessControl, ILicense {
     ITreasury public immutable TREASURY;
     IScoring public SCORING;
 
-    uint256 public immutable GOIL_SUPPLY;
-
-    uint256 public requiredVotesPercentage = 66_00;
     uint256 public votingPeriod = 7 days;
     uint256 public licenseExpirationLimit = 365 days; // 12 months
 
-    uint256 public requiredVotesThreshold;
     uint256 public applicationFee;
     uint256 public licenseMonthlyFee;
 
+    LicenseInfo[] public allPendingLicenses;
+
+    mapping(address => LicenseInfo) public licenses;
     mapping(address => LicenseFeeAndCollateral) public licenseFeeAndCollateralPaid;
-    mapping(address => mapping(uint256 => LicenseInfo)) public licenses;
-    mapping(address => uint256) public licenseCount;
 
     modifier withSetupScoringContract() {
         if (address(SCORING) == address(0)) revert ScoringContractNotSet();
@@ -57,91 +55,64 @@ contract License is AccessControl, ILicense {
         TREASURY = ITreasury(_treasury);
         applicationFee = _applicationFee;
         licenseMonthlyFee = _licenseMonthlyFee;
-        GOIL_SUPPLY = GOIL_TOKEN.totalSupply();
-        requiredVotesThreshold = (GOIL_SUPPLY * requiredVotesPercentage) / PERCENTAGE_DENOMINATOR;
 
         _grantRole(DEFAULT_ADMIN_ROLE, _admin);
+        _grantRole(LICENSE_MANAGER_ROLE, _admin);
         _grantRole(MANAGER_ROLE, _admin);
     }
 
     function submitLicense(uint256 _licenseEndTime, uint256 _collateralAmount) external withSetupScoringContract {
-        LicenseState state = getLicenseStatus(msg.sender);
         uint256 licenseStartTime = block.timestamp + votingPeriod;
         uint256 licensePeriod = _licenseEndTime - licenseStartTime;
 
         if (QADRATA_READER.balanceOf(msg.sender, REQUIRED_KYB) == 0) revert ApplicantMustHaveQadrataKYB();
         if (licensePeriod < 30 days) revert LicensePeriodTooShort();
         if (licenseExpirationLimit < licensePeriod) revert LicensePeriodTooLong();
-        if (state == LicenseState.ACTIVE || state == LicenseState.PENDING) revert LicenseAlreadySubmitted();
-        
-        LicenseFeeAndCollateral memory licenseFeeAndCollateral = licenseFeeAndCollateralPaid[msg.sender];
+        if (getLicenseIsPending(msg.sender)) revert LicenseAlreadySubmitted();
 
-        uint256 licenseFeePaid = licenseFeeAndCollateral.licenseFee;
         uint256 licenseFee = (licensePeriod / 30 days) * licenseMonthlyFee;
-
-        licenseFee > licenseFeePaid ? licenseFee -= licenseFeePaid : licenseFee = 0;
+        uint256 licenseFeeAndCollateral = licenseFee + _collateralAmount;
 
         GOIL_TOKEN.transferFrom(msg.sender, address(TREASURY), applicationFee);
-        if (licenseFee + _collateralAmount > 0) GOIL_TOKEN.transferFrom(msg.sender, address(this), licenseFee + _collateralAmount);
+        GOIL_TOKEN.transferFrom(msg.sender, address(this), licenseFeeAndCollateral);
 
-        licenseFeeAndCollateralPaid[msg.sender].licenseFee += licenseFee;
-        licenseFeeAndCollateralPaid[msg.sender].collateral += _collateralAmount;
+        licenseFeeAndCollateralPaid[msg.sender].licenseFee = licenseFee;
+        licenseFeeAndCollateralPaid[msg.sender].collateral = _collateralAmount;
 
-        licenseCount[msg.sender] += 1;
-        uint256 licenseId = licenseCount[msg.sender];
-        LicenseInfo storage license = licenses[msg.sender][licenseId];
+        licenses[msg.sender].startTime = licenseStartTime;
+        licenses[msg.sender].endTime = _licenseEndTime;
+        licenses[msg.sender].approved = false;
+        licenses[msg.sender].confirmedByAdmin = false;
 
-        license.startTime = licenseStartTime;
-        license.endTime = _licenseEndTime;
-
-        emit AppliedForLicense(msg.sender, licenseId, licenseStartTime, _licenseEndTime, licenseFee, _collateralAmount);
+        emit SubmittedLicense(msg.sender, licenseStartTime, _licenseEndTime, licenseFee, _collateralAmount);
     }
 
-    function vote(address _applicant) external withSetupScoringContract {
-        uint256 votes = GOIL_TOKEN.balanceOf(msg.sender);
-        uint256 licenseId = licenseCount[_applicant];
+    function approveLicense(address _entity, bool _approved) external onlyRole(LICENSE_MANAGER_ROLE) {
+        if (!getLicenseIsPending(_entity)) revert LicenseIsNotPending();
 
-        LicenseInfo storage license = licenses[_applicant][licenseId];
-        LicenseState state = getLicenseStatus(_applicant);
+        LicenseFeeAndCollateral memory licenseFeeAndCollateral = licenseFeeAndCollateralPaid[_entity];
 
-        if (votes == 0) revert NoGOILTokensToVote();
-        if (state != LicenseState.PENDING) revert LicenseIsNotPending();
-        if (license.voters[msg.sender] > 0) revert AlreadyVoted();
+        if (_approved) {
+            GOIL_TOKEN.transfer(address(TREASURY), licenseFeeAndCollateral.licenseFee);
+            GOIL_TOKEN.approve(address(TREASURY), licenseFeeAndCollateral.collateral);
+            TREASURY.depositCollateral(_entity, licenseFeeAndCollateral.collateral);
 
-        license.voters[msg.sender] = votes;
-        license.totalVotes += votes;
+            licenseFeeAndCollateralPaid[_entity].collateral = 0;
+            licenseFeeAndCollateralPaid[_entity].licenseFee = 0;
 
-        if (license.totalVotes >= requiredVotesThreshold) {
-            uint256 licenseFee = (license.endTime - license.startTime) / 30 days * licenseMonthlyFee;
-            uint256 collateralAmount = licenseFeeAndCollateralPaid[_applicant].collateral;
+            licenses[_entity].approved = true;
 
-            GOIL_TOKEN.transfer(address(TREASURY), licenseFee);
-            GOIL_TOKEN.approve(address(TREASURY), collateralAmount);
-            TREASURY.depositCollateral(_applicant, collateralAmount);
-
-            licenseFeeAndCollateralPaid[_applicant].licenseFee -= licenseFee;
-            licenseFeeAndCollateralPaid[_applicant].collateral = 0;
-            license.approved = true;
-
-            if (!SCORING.getIsInitialScoreSet(_applicant)) SCORING.setInitialScore(_applicant);
-            emit LicenseApproved(_applicant, licenseId);
+            if (SCORING.getIsReadyToSetInitialScore(_entity)) SCORING.setInitialScore(_entity);
+        } else {
+            GOIL_TOKEN.transfer(_entity, licenseFeeAndCollateral.licenseFee + licenseFeeAndCollateral.collateral);
         }
 
-        emit Voted(_applicant, msg.sender, licenseId, votes);
+        licenses[_entity].confirmedByAdmin = true;
+
+        emit LicenseApproved(_entity, _approved);
     }
 
-    function refundLicenseFeeAndCollateral() external {
-        uint256 refundableAmount = getRefundableAmount(msg.sender);
-        if (refundableAmount == 0) revert NoTokensToRefund();
-
-        licenseFeeAndCollateralPaid[msg.sender].licenseFee = 0;
-        licenseFeeAndCollateralPaid[msg.sender].collateral = 0;
-
-        GOIL_TOKEN.transfer(msg.sender, refundableAmount);
-        emit RefundedLicenseFeeAndCollateral(msg.sender, refundableAmount);
-    }
-
-    function setScoringContract(address _scoringContract) external onlyRole(MANAGER_ROLE) {
+    function setScoringContract(address _scoringContract) external onlyRole(DEFAULT_ADMIN_ROLE) {
         if (!_isContract(_scoringContract)) revert ScoringContractMustBeContract();
         if (address(SCORING) != address(0)) revert ScoringContractAlreadySet();
 
@@ -163,15 +134,6 @@ contract License is AccessControl, ILicense {
         emit LicenseMonthlyFeeUpdated(_licenseMonthlyFee);
     }
 
-    function setRequiredVotesPercentage(uint256 _requiredVotesPercentage) external onlyRole(MANAGER_ROLE) {
-        if (requiredVotesPercentage == _requiredVotesPercentage) revert PercentageCannotBeTheSame();
-        if (_requiredVotesPercentage == 0 || _requiredVotesPercentage > PERCENTAGE_DENOMINATOR) revert InvalidPercentage();
-
-        requiredVotesPercentage = _requiredVotesPercentage;
-        requiredVotesThreshold = (GOIL_TOKEN.totalSupply() * requiredVotesPercentage) / PERCENTAGE_DENOMINATOR;
-        emit RequiredVotesPercentageUpdated(_requiredVotesPercentage);
-    }
-
     function setVotingPeriod(uint256 _votingPeriod) external onlyRole(MANAGER_ROLE) {
         if (votingPeriod == _votingPeriod) revert VotingPeriodCannotBeTheSame();
         if (_votingPeriod == 0) revert VotingPeriodCannotBeZero();
@@ -189,15 +151,13 @@ contract License is AccessControl, ILicense {
     }
 
     function getLicenseStatus(address _entity) public view returns (LicenseState) {
-        uint256 licenseId = licenseCount[_entity];
-        if (licenseId == 0) return LicenseState.UNINITIALIZED;
-
-        LicenseInfo storage license = licenses[_entity][licenseId];
+        LicenseInfo memory license = licenses[_entity];
         uint256 currentTime = block.timestamp;
 
-        if (license.startTime > currentTime && !license.approved) return LicenseState.PENDING;
-        if (license.endTime < currentTime) return LicenseState.EXPIRED;
+        if (license.startTime == 0) return LicenseState.UNINITIALIZED;
+        if ((license.startTime > currentTime && !license.approved) || !license.confirmedByAdmin) return LicenseState.PENDING;
         if (!license.approved) return LicenseState.REJECTED;
+        if (license.endTime < currentTime) return LicenseState.EXPIRED;
 
         return LicenseState.ACTIVE;
     }
@@ -211,45 +171,14 @@ contract License is AccessControl, ILicense {
     }
 
     function getLicenseExpirationTime(address _entity) public view returns (uint256) {
-        uint256 licenseId = licenseCount[_entity];
-        LicenseInfo storage license = licenses[_entity][licenseId];
-        return license.endTime;
+        return licenses[_entity].endTime;
     }
 
-    function getLicenseByEntity(address _entity) public view returns (uint8, uint256, uint256, uint256, uint256, uint256) {
-        uint256 licenseId = licenseCount[_entity];
-        LicenseInfo storage license = licenses[_entity][licenseId];
-        
-        uint256 totalVotesAgainst = GOIL_SUPPLY - license.totalVotes;
-        uint256 votingPercentage = getLicenseVotingPercentage(_entity);
+    function getLicenseByEntity(address _entity) public view returns (uint8, uint256, uint256, bool, bool) {
+        LicenseInfo memory license = licenses[_entity];
         uint8 status = uint8(getLicenseStatus(_entity));
 
-        return (status, license.totalVotes, totalVotesAgainst, votingPercentage, license.startTime, license.endTime);
-    }
-
-    function getLastLicenseVotesByUser(address _entity, address _voter) public view returns (uint256) {
-        uint256 licenseId = licenseCount[_entity];
-        return getLicenseVotesByUser(_entity, licenseId, _voter);
-    }
-
-    function getLicenseVotesByUser(address _entity, uint256 _licenseId, address _voter) public view returns (uint256) {
-        LicenseInfo storage license = licenses[_entity][_licenseId];
-        return license.voters[_voter];
-    }
-
-    function getLicenseVotingPercentage(address _entity) public view returns (uint256) {
-        uint256 licenseId = licenseCount[_entity];
-        LicenseInfo storage license = licenses[_entity][licenseId];
-
-        return (license.totalVotes * PERCENTAGE_DENOMINATOR) / GOIL_SUPPLY;
-    }
-
-    function getRefundableAmount(address _entity) public view returns (uint256) {
-        LicenseState state = getLicenseStatus(_entity);
-        uint256 licenseFee = licenseFeeAndCollateralPaid[_entity].licenseFee;
-        uint256 collateral = licenseFeeAndCollateralPaid[_entity].collateral;
-
-        return state == LicenseState.PENDING ? 0 : licenseFee + collateral;
+        return (status, license.startTime, license.endTime, license.approved, license.confirmedByAdmin);
     }
 
     function _isContract(address _address) private view returns (bool) {

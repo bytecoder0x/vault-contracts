@@ -6,18 +6,16 @@ import { loadFixture } from "@nomicfoundation/hardhat-network-helpers";
 import { time } from "@nomicfoundation/hardhat-network-helpers";
 import { deployAllContracts } from "./utils.test";
 
-describe("License", function () {
+describe.only("GoilLicense", function () {
     let license: License;
     let scoring: Scoring;
     let goilToken: MockERC20;
     let qadrataReader: MockQuadata; 
     let treasury: Treasury;
     let admin: HardhatEthersSigner;
+
     let manager: HardhatEthersSigner;
     let applicant: HardhatEthersSigner;
-    let voter1: HardhatEthersSigner;
-    let voter2: HardhatEthersSigner;
-    let voter3: HardhatEthersSigner;
     let otherAccount: HardhatEthersSigner;
     let applicationFee: bigint;
     let licenseMonthlyFee: bigint;
@@ -44,9 +42,6 @@ describe("License", function () {
         treasury = fixture.treasury;
         scoring = fixture.scoring;
         applicant = fixture.entity;
-        voter1 = fixture.holder1;
-        voter2 = fixture.holder2;
-        voter3 = fixture.holder3;
         otherAccount = fixture.user2;
         applicationFee = fixture.APPLICATION_FEE;
         licenseMonthlyFee = fixture.LICENSE_MONTHLY_FEE;
@@ -72,11 +67,6 @@ describe("License", function () {
 
         it("Should set correct license monthly fee", async function () {
             expect(await license.licenseMonthlyFee()).to.equal(licenseMonthlyFee);
-        });
-
-        it("Should set correct required votes threshold", async function () {
-            const requiredVotesThreshold = BigInt((await goilToken.totalSupply()) * 66_00n / 100_00n);
-            expect(await license.requiredVotesThreshold()).to.equal(requiredVotesThreshold);
         });
 
         it("Should set correct voting period", async function () {
@@ -183,7 +173,6 @@ describe("License", function () {
             );
 
             await expect(license.connect(applicant).submitLicense(1, 0)).to.be.revertedWithCustomError(license, "ScoringContractNotSet");
-            await expect(license.connect(applicant).vote(applicant.address)).to.be.revertedWithCustomError(license, "ScoringContractNotSet");
         });
     });
 
@@ -197,16 +186,17 @@ describe("License", function () {
             const licenseEndTime = licenseStartTime + (365n * 24n * 3600n);
             
             await expect(license.connect(applicant).submitLicense(licenseEndTime, COLLATERAL_AMOUNT))
-                .to.emit(license, "AppliedForLicense")
-                .withArgs(applicant.address, 1, licenseStartTime, licenseEndTime, licenseMonthlyFee * 12n, COLLATERAL_AMOUNT);
-            
-            const [startTime, endTime, approved] = await license.getLicenseByEntity(applicant.address);
+                .to.emit(license, "SubmittedLicense")
+                .withArgs(applicant.address, licenseStartTime, licenseEndTime, licenseMonthlyFee * 12n, COLLATERAL_AMOUNT);
 
+            const [status, startTime, endTime, approved, confirmedByAdmin] = await license.getLicenseByEntity(applicant.address);
+
+            expect(status).to.equal(1); // PENDING
             expect(startTime).to.equal(licenseStartTime);
             expect(endTime).to.equal(licenseEndTime);
             expect(approved).to.equal(false);
+            expect(confirmedByAdmin).to.equal(false);
             expect(await license.getLicenseExpirationTime(applicant.address)).to.equal(licenseEndTime);
-            expect(await license.getLicenseVotingPercentage(applicant.address)).to.equal(0);
             expect(await goilToken.balanceOf(treasury.target)).to.equal(applicationFee);
             expect(await goilToken.balanceOf(license.target)).to.equal(licenseMonthlyFee * 12n + COLLATERAL_AMOUNT);
         });
@@ -214,25 +204,27 @@ describe("License", function () {
         it("Should successfully submit a license if previous license is rejected", async function () {
             const licenseEndTime = BigInt(await time.latest()) + (365n * 24n * 3600n) + BigInt(VOTING_PERIOD); 
             await submitLicense(licenseEndTime);
-            expect(await goilToken.balanceOf(license.target)).to.equal(licenseMonthlyFee * 12n + COLLATERAL_AMOUNT);
+            expect(await goilToken.balanceOf(license.target)).to.equal(totalFeeWithCollateral - applicationFee);
             
-            await license.connect(voter1).vote(applicant.address); // *not enough votes
+            const balanceBeforeRefund = await goilToken.balanceOf(applicant.address);
+            await license.approveLicense(applicant.address, false);
 
             await time.increase(10 * 24 * 3600); // 10 days
             expect(await license.getLicenseIsActive(applicant.address)).to.equal(false); 
             expect(await license.getLicenseStatus(applicant.address)).to.equal(2); // REJECTED
-            expect(await goilToken.balanceOf(license.target)).to.equal(licenseMonthlyFee * 12n + COLLATERAL_AMOUNT);
+            expect(await goilToken.balanceOf(license.target)).to.equal(0);
+            expect(await goilToken.balanceOf(applicant.address)).to.equal(balanceBeforeRefund + totalFeeWithCollateral - applicationFee);
 
             const newLicenseEndTime = BigInt(await time.latest()) + (365n * 24n * 3600n) + BigInt(VOTING_PERIOD);
 
-            await goilToken.connect(applicant).mint(applicant.address, totalFeeWithCollateral);
+            await goilToken.connect(applicant).mint(applicant.address, applicationFee);
             await goilToken.connect(applicant).approve(license.target, totalFeeWithCollateral);
-            await license.connect(applicant).submitLicense(newLicenseEndTime, 0);
+            await license.connect(applicant).submitLicense(newLicenseEndTime, COLLATERAL_AMOUNT);
 
-            const licenseInfo = await license.licenses(applicant.address, 2);
+            const licenseInfo = await license.licenses(applicant.address);
             expect(licenseInfo.endTime).to.equal(newLicenseEndTime);
             expect(licenseInfo.approved).to.equal(false);
-            expect(await license.getLicenseVotingPercentage(applicant.address)).to.equal(0);
+            expect(licenseInfo.confirmedByAdmin).to.equal(false);
             expect(await goilToken.balanceOf(treasury.target)).to.equal(applicationFee * 2n);
             expect(await goilToken.balanceOf(license.target)).to.equal(licenseMonthlyFee * 12n + COLLATERAL_AMOUNT);
         });
@@ -240,22 +232,21 @@ describe("License", function () {
         it("Should successfully submit a license if previous license is expired", async function () {
             const licenseEndTime = BigInt(await time.latest()) + (365n * 24n * 3600n) + BigInt(VOTING_PERIOD); 
             await submitLicense(licenseEndTime);
-            
-            await license.connect(voter1).vote(applicant.address);
-            await license.connect(voter2).vote(applicant.address);
-            await license.connect(voter3).vote(applicant.address);
+
+            await time.increase(10 * 24 * 3600); // 10 days
+            await license.approveLicense(applicant.address, true);
 
             await time.increase((365n * 24n * 3600n) + BigInt(VOTING_PERIOD)); // 1 year
             expect(await license.getLicenseIsActive(applicant.address)).to.equal(false); 
             expect(await license.getLicenseStatus(applicant.address)).to.equal(4); // EXPIRED
 
-            const newLicenseEndTime = BigInt(await time.latest()) + (365n * 24n * 3600n) + BigInt(VOTING_PERIOD);
+            const newLicenseEndTime = BigInt(await time.latest()) + (365n * 24n * 3600n) + BigInt(VOTING_PERIOD) + 1n;
             await submitLicense(newLicenseEndTime);
 
-            const licenseInfo = await license.licenses(applicant.address, 2);
+            const licenseInfo = await license.licenses(applicant.address);
             expect(licenseInfo.endTime).to.equal(newLicenseEndTime);
             expect(licenseInfo.approved).to.equal(false);
-            expect(await license.getLicenseVotingPercentage(applicant.address)).to.equal(0);
+            expect(licenseInfo.confirmedByAdmin).to.equal(false);
             expect(await goilToken.balanceOf(treasury.target)).to.equal(licenseMonthlyFee * 12n + applicationFee * 2n + COLLATERAL_AMOUNT);
         });
 
@@ -288,86 +279,27 @@ describe("License", function () {
             await submitLicense(licenseEndTime)
 
             await expect(submitLicense(licenseEndTime)).to.be.revertedWithCustomError(license, "LicenseAlreadySubmitted");
-
-            await license.connect(voter1).vote(applicant.address);
-            await license.connect(voter2).vote(applicant.address);
-            await license.connect(voter3).vote(applicant.address);
-
-            expect(await license.getLicenseStatus(applicant.address)).to.equal(3); // ACTIVE
-
-            await expect(submitLicense(licenseEndTime)).to.be.revertedWithCustomError(license, "LicenseAlreadySubmitted");
         });
     });
 
-    describe("Voting Functionality", function () {
-        it("Should successfully approve a license when votes threshold is reached and set initial score", async function () {
+    describe("Approval Functionality", function () {
+        it("Should successfully approve a license and set initial score", async function () {
             const licenseEndTime = BigInt(await time.latest()) + (365n * 24n * 3600n) + BigInt(VOTING_PERIOD); // 1 year 
             await submitLicense(licenseEndTime);
             
+
             await scoring.connect(admin).setPerformanceData(applicant.address, 50_000, 50_000);
-
-            await expect(license.connect(voter1).vote(applicant.address))
-                .to.emit(license, "Voted")
-                .withArgs(applicant.address, voter1.address, 1, await goilToken.balanceOf(voter1.address));
-            
-            await expect(license.connect(voter2).vote(applicant.address))
-                .to.emit(license, "Voted")
-                .withArgs(applicant.address, voter2.address, 1, await goilToken.balanceOf(voter2.address));
-
-            await expect(license.connect(voter3).vote(applicant.address))
-                .to.emit(license, "Voted")
-                .withArgs(applicant.address, voter3.address, 1, await goilToken.balanceOf(voter3.address));
+            await expect(license.approveLicense(applicant.address, true))
+                .to.emit(license, "LicenseApproved")
+                .withArgs(applicant.address, true);
 
             const licenseStatus = await license.getLicenseStatus(applicant.address);
             expect(licenseStatus).to.equal(3); // ACTIVE
-
-            const votes1 = await goilToken.balanceOf(voter1.address);
-            const votes2 = await goilToken.balanceOf(voter2.address);
-            const votes3 = await goilToken.balanceOf(voter3.address);
 
             const scores = await scoring.getScores(applicant.address);
             
             expect(scores.length).to.equal(1);
             expect(scores[0]).greaterThan(0);
-            expect(await license.getLicenseVotesByUser(applicant.address, 1, voter1.address)).to.equal(votes1);
-            expect(await license.getLicenseVotesByUser(applicant.address, 1, voter2.address)).to.equal(votes2);
-            expect(await license.getLicenseVotesByUser(applicant.address, 1, voter3.address)).to.equal(votes3);
-            expect(await goilToken.balanceOf(treasury.target)).to.equal(applicationFee + licenseMonthlyFee * 12n + COLLATERAL_AMOUNT);
-            expect(await goilToken.balanceOf(license.target)).to.equal(0);
-        });
-
-        it("Should successfully approve license when reach threshold with multiple voters", async function () {
-            const voter1Votes = await goilToken.balanceOf(voter1.address);
-            const voter2Votes = await goilToken.balanceOf(voter2.address);
-            const voter3Votes = await goilToken.balanceOf(voter3.address);
-            // Total 90% > threshold
-
-            const licenseEndTime = BigInt(await time.latest()) + (365n * 24n * 3600n) + BigInt(VOTING_PERIOD);
-            await submitLicense(licenseEndTime);
-    
-            // First voter
-            await expect(license.connect(voter1).vote(applicant.address))
-                .to.emit(license, "Voted")
-                .withArgs(applicant.address, voter1.address, 1, voter1Votes);
-    
-            expect(await license.getLicenseStatus(applicant.address)).to.equal(1); // Still PENDING
-            expect(await license.getLicenseVotesByUser(applicant.address, 1, voter1.address)).to.equal(voter1Votes);
-    
-            // Second voter
-            await expect(license.connect(voter2).vote(applicant.address))
-                .to.emit(license, "Voted")
-                .withArgs(applicant.address, voter2.address, 1, voter2Votes);
-    
-            expect(await license.getLicenseStatus(applicant.address)).to.equal(1); // Still PENDING
-            expect(await license.getLicenseVotesByUser(applicant.address, 1, voter2.address)).to.equal(voter2Votes);
-    
-            // Third voter- after this vote threshold should be reached
-            await expect(license.connect(voter3).vote(applicant.address))
-                .to.emit(license, "Voted")
-                .withArgs(applicant.address, voter3.address, 1, voter3Votes);
-    
-            // After third vote should be approved
-            expect(await license.getLicenseStatus(applicant.address)).to.equal(3); // ACTIVE
             expect(await goilToken.balanceOf(treasury.target)).to.equal(applicationFee + licenseMonthlyFee * 12n + COLLATERAL_AMOUNT);
             expect(await goilToken.balanceOf(license.target)).to.equal(0);
         });
@@ -376,10 +308,7 @@ describe("License", function () {
             const licenseEndTime = BigInt(await time.latest()) + (365n * 24n * 3600n) + BigInt(VOTING_PERIOD);
             await submitLicense(licenseEndTime);
 
-            await license.connect(voter1).vote(applicant.address);
-            await license.connect(voter2).vote(applicant.address);
-            await license.connect(voter3).vote(applicant.address);
-
+            await license.approveLicense(applicant.address, true);
             await scoring.connect(admin).setPerformanceData(applicant.address, 50_000, 50_000);
 
             const scores = await scoring.getScores(applicant.address);
@@ -391,117 +320,33 @@ describe("License", function () {
 
             const newLicenseEndTime = BigInt(await time.latest()) + (365n * 24n * 3600n) + BigInt(VOTING_PERIOD);
             await submitLicense(newLicenseEndTime);
-
-            await license.connect(voter1).vote(applicant.address);
-            await license.connect(voter2).vote(applicant.address);
-            await license.connect(voter3).vote(applicant.address);
+            await license.approveLicense(applicant.address, true);
 
             expect(await license.getLicenseStatus(applicant.address)).to.equal(3); // ACTIVE
             expect(await goilToken.balanceOf(license.target)).to.equal(0);
             expect(await goilToken.balanceOf(treasury.target)).to.equal(applicationFee * 2n + (licenseMonthlyFee * 12n) * 2n + COLLATERAL_AMOUNT * 2n);
         })
 
-        it("Should not approve license when reach threshold with multiple voters", async function () {
-            // Total 60% < threshold
-            const voter1Votes = await goilToken.balanceOf(voter1.address);
-            const voter2Votes = await goilToken.balanceOf(voter2.address);
-
-            const licenseEndTime = BigInt(await time.latest()) + (365n * 24n * 3600n) + BigInt(VOTING_PERIOD);
-            await submitLicense(licenseEndTime);
-    
-            // First voter
-            await expect(license.connect(voter1).vote(applicant.address))
-                .to.emit(license, "Voted")
-                .withArgs(applicant.address, voter1.address, 1, voter1Votes);
-    
-            expect(await license.getLicenseStatus(applicant.address)).to.equal(1); // PENDING
-            expect(await license.getLicenseVotesByUser(applicant.address, 1, voter1.address)).to.equal(voter1Votes);
-    
-            // Second voter
-            await expect(license.connect(voter2).vote(applicant.address))
-                .to.emit(license, "Voted")
-                .withArgs(applicant.address, voter2.address, 1, voter2Votes);
-    
-            expect(await license.getLicenseStatus(applicant.address)).to.equal(1); // PENDING
-            expect(await license.getLicenseVotesByUser(applicant.address, 1, voter2.address)).to.equal(voter2Votes);
-            
-            // After voting period ends should be rejected
-            await time.increase(VOTING_PERIOD + 1);
-            expect(await license.getLicenseStatus(applicant.address)).to.equal(2); // REJECTED
-            
-            // Check final balances - should be able to refund license fee
-            const balanceBeforeRefund = await goilToken.balanceOf(applicant.address);
-            await license.connect(applicant).refundLicenseFeeAndCollateral();
-            expect(await goilToken.balanceOf(applicant.address)).to.equal(balanceBeforeRefund + licenseMonthlyFee * 12n + COLLATERAL_AMOUNT);
-            expect(await goilToken.balanceOf(treasury.target)).to.equal(applicationFee);
-            expect(await goilToken.balanceOf(license.target)).to.equal(0);
-        });
-
-        it("Should revert if voter has no GOIL tokens", async function () {
-            const licenseEndTime = BigInt(await time.latest()) + (365n * 24n * 3600n) + BigInt(VOTING_PERIOD);
-            await submitLicense(licenseEndTime)
-
-            await expect(
-                license.connect(otherAccount).vote(applicant.address)
-            ).to.be.revertedWithCustomError(license, "NoGOILTokensToVote");
-        });
-
         it("Should revert if license is not in PENDING state", async function () {
             const licenseEndTime = BigInt(await time.latest()) + (365n * 24n * 3600n) + BigInt(VOTING_PERIOD);
             await submitLicense(licenseEndTime)
 
             await goilToken.connect(otherAccount).mint(otherAccount.address, ethers.parseEther("1000"));
-            
-            await license.connect(voter1).vote(applicant.address);
-            await license.connect(voter2).vote(applicant.address);
-            await license.connect(voter3).vote(applicant.address);
+            await license.approveLicense(applicant.address, true);
 
             await expect(
-                license.connect(otherAccount).vote(applicant.address)
+                license.approveLicense(applicant.address, true)
             ).to.be.revertedWithCustomError(license, "LicenseIsNotPending");
         });
 
-        it("Should revert if voter has already voted", async function () {
+        it("Should revert if not license manager tries to approve license", async function () {
             const licenseEndTime = BigInt(await time.latest()) + (365n * 24n * 3600n) + BigInt(VOTING_PERIOD);
-            await submitLicense(licenseEndTime)
 
-            await license.connect(voter1).vote(applicant.address);
-
-            await expect(
-                license.connect(voter1).vote(applicant.address)
-            ).to.be.revertedWithCustomError(license, "AlreadyVoted");
-        });
-    });
-
-    describe("Refund Functionality", function () {
-        it("Should successfully refund license fees and collateral", async function () {
-            const licenseEndTime = BigInt(await time.latest()) + (365n * 24n * 3600n) + BigInt(VOTING_PERIOD);
-            await submitLicense(licenseEndTime)
-            const balanceBeforeRefund = await goilToken.balanceOf(applicant.address);
-
-            // Increase time to allow refund
-            await time.increase(10 * 24 * 3600); // 10 days
-
-            await expect(license.connect(applicant).refundLicenseFeeAndCollateral())
-                .to.emit(license, "RefundedLicenseFeeAndCollateral")
-                .withArgs(applicant.address, licenseMonthlyFee * 12n + COLLATERAL_AMOUNT);
-
-            expect(await goilToken.balanceOf(applicant.address)).to.equal(balanceBeforeRefund + licenseMonthlyFee * 12n + COLLATERAL_AMOUNT);
-            expect(await goilToken.balanceOf(license.target)).to.equal(0);
-        });
-
-        it("Should prevent refund license fee and collateral if applicant applied and has pending license", async function () {
-            const licenseEndTime = BigInt(await time.latest()) + (365n * 24n * 3600n) + BigInt(VOTING_PERIOD);
             await submitLicense(licenseEndTime);
-
-            await expect(license.connect(applicant).refundLicenseFeeAndCollateral())
-                .to.be.revertedWithCustomError(license, "NoTokensToRefund");
-        });
-
-        it("Should revert if there are no fees to refund", async function () {
             await expect(
-                license.connect(applicant).refundLicenseFeeAndCollateral()
-            ).to.be.revertedWithCustomError(license, "NoTokensToRefund");
+                license.connect(otherAccount).approveLicense(applicant.address, true)
+            ).to.be.revertedWithCustomError(license, "AccessControlUnauthorizedAccount")
+                .withArgs(otherAccount.address, ethers.keccak256(ethers.toUtf8Bytes("LICENSE_MANAGER_ROLE")));
         });
     });
 
@@ -524,16 +369,6 @@ describe("License", function () {
                 .withArgs(ethers.parseEther("60"));
 
             expect(await license.licenseMonthlyFee()).to.equal(ethers.parseEther("60"));
-        });
-
-        it("Should allow manager to change required votes percentage", async function () {
-            await expect(
-                license.connect(manager).setRequiredVotesPercentage(7000)
-            )
-                .to.emit(license, "RequiredVotesPercentageUpdated")
-                .withArgs(7000);
-
-            expect(await license.requiredVotesPercentage()).to.equal(7000);
         });
 
         it("Should allow manager to change voting period", async function () {
@@ -572,22 +407,6 @@ describe("License", function () {
             await expect(
                 license.connect(manager).setLicenseMonthlyFee(currentMothlyLicenseFee)
             ).to.be.revertedWithCustomError(license, "FeeCannotBeTheSame")
-        });
-
-        it("Should revert set required votes percentage if its the same or incorrect", async function () {
-            const currentRequiredVotesPercentage = await license.requiredVotesPercentage();
-
-            await expect(
-                license.connect(manager).setRequiredVotesPercentage(currentRequiredVotesPercentage)
-            ).to.be.revertedWithCustomError(license, "PercentageCannotBeTheSame");
-
-            await expect(
-                license.connect(manager).setRequiredVotesPercentage(100_01)
-            ).to.be.revertedWithCustomError(license, "InvalidPercentage");
-
-            await expect(
-                license.connect(manager).setRequiredVotesPercentage(0)
-            ).to.be.revertedWithCustomError(license, "InvalidPercentage")
         });
 
         it("Should revert set voting period if its the same or zero", async function () {
@@ -634,11 +453,6 @@ describe("License", function () {
                 license.connect(otherAccount).setLicenseMonthlyFee(ethers.parseEther("60"))
             ).to.be.revertedWithCustomError(license, "AccessControlUnauthorizedAccount")
                 .withArgs(otherAccount.address, ethers.keccak256(ethers.toUtf8Bytes("MANAGER_ROLE")));
-
-            await expect(
-                license.connect(otherAccount).setRequiredVotesPercentage(7000)
-            ).revertedWithCustomError(license, "AccessControlUnauthorizedAccount")
-                .withArgs(otherAccount.address, ethers.keccak256(ethers.toUtf8Bytes("MANAGER_ROLE")));
             
             await expect(
                 license.connect(otherAccount).setVotingPeriod(10 * 24 * 3600)
@@ -650,16 +464,17 @@ describe("License", function () {
             ).revertedWithCustomError(license, "AccessControlUnauthorizedAccount")
                 .withArgs(otherAccount.address, ethers.keccak256(ethers.toUtf8Bytes("MANAGER_ROLE")));
 
+            const adminRole = await license.DEFAULT_ADMIN_ROLE();
             await expect(
                 license.connect(otherAccount).setScoringContract(scoring.target)
             ).revertedWithCustomError(license, "AccessControlUnauthorizedAccount")
-                .withArgs(otherAccount.address, ethers.keccak256(ethers.toUtf8Bytes("MANAGER_ROLE")));
+                .withArgs(otherAccount.address, adminRole);
         });
     });
 
+
     describe("License Information Retrieval Functionality", function () {
         it("Should return the correct license status", async function () {
-
             const licenseEndTime = BigInt(await time.latest()) + (365n * 24n * 3600n) + BigInt(VOTING_PERIOD);
 
             expect(await license.getLicenseStatus(applicant.address)).to.equal(0); // UNINITIALIZED
@@ -668,9 +483,7 @@ describe("License", function () {
             expect(await license.getLicenseStatus(applicant.address)).to.equal(1); // PENDING
             expect(await license.getLicenseIsPending(applicant.address)).to.equal(true);
 
-            await license.connect(voter1).vote(applicant.address);
-            await license.connect(voter2).vote(applicant.address);
-            await license.connect(voter3).vote(applicant.address);
+            await license.approveLicense(applicant.address, true);
 
             expect(await license.getLicenseIsActive(applicant.address)).to.equal(true);
             expect(await license.getLicenseStatus(applicant.address)).to.equal(3); // ACTIVE
@@ -684,10 +497,13 @@ describe("License", function () {
             const licenseEndTime = BigInt(await time.latest()) + (365n * 24n * 3600n) + BigInt(VOTING_PERIOD);
             await submitLicense(licenseEndTime)
 
-            const [startTime, endTime, approved] = await license.getLicenseByEntity(applicant.address);
+            const [status, startTime, endTime, approved, confirmedByAdmin] = await license.getLicenseByEntity(applicant.address);
+            
+            expect(status).to.equal(1); // PENDING
             expect(startTime).to.equal(BigInt(await time.latest()) + 7n * 24n * 3600n);
             expect(endTime).to.equal(licenseEndTime);
             expect(approved).to.equal(false);
+            expect(confirmedByAdmin).to.equal(false);
         });
     });
 });
