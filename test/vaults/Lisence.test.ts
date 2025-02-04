@@ -5,15 +5,15 @@ import { HardhatEthersSigner } from "@nomicfoundation/hardhat-ethers/signers";
 import { loadFixture } from "@nomicfoundation/hardhat-network-helpers";
 import { time } from "@nomicfoundation/hardhat-network-helpers";
 import { deployAllContracts } from "../utils.test";
+import { APPLICATION_FEE, LICENSE_MONTHLY_FEE } from "../constants";
 
-describe.only("GoilLicense", function () {
+describe("GoilLicense", function () {
     let license: License;
     let scoring: Scoring;
     let goilToken: MockERC20;
     let qadrataReader: MockQuadata; 
     let treasury: Treasury;
     let admin: HardhatEthersSigner;
-
     let manager: HardhatEthersSigner;
     let applicant: HardhatEthersSigner;
     let otherAccount: HardhatEthersSigner;
@@ -43,10 +43,11 @@ describe.only("GoilLicense", function () {
         scoring = fixture.scoring;
         applicant = fixture.entity;
         otherAccount = fixture.user2;
-        applicationFee = fixture.APPLICATION_FEE;
-        licenseMonthlyFee = fixture.LICENSE_MONTHLY_FEE;
+        applicationFee = APPLICATION_FEE;
+        licenseMonthlyFee = LICENSE_MONTHLY_FEE;
 		totalFeeWithCollateral = COLLATERAL_AMOUNT + licenseMonthlyFee * 12n + applicationFee;
     });
+
 
     describe("Deployment Functionality", function () {
         it("Should set correct quadrata reader contract", async function () {
@@ -159,6 +160,7 @@ describe.only("GoilLicense", function () {
                     0
                 )
             ).to.be.revertedWithCustomError(license, "FeesCannotBeZero");
+
         });
 
         it("Should revert calling main function without setup scoring contract", async function () {
