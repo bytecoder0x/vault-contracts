@@ -6,6 +6,7 @@ import {ITreasury} from "./ITreasury.sol";
 import {IScoring} from "./IScoring.sol";
 
 interface IVaultFactory {
+    error AdminCannotBeZeroAddress();
     error OracleMustBeContract();
     error RouterV2MustBeContract();
     error RouterV3MustBeContract();
@@ -31,6 +32,8 @@ interface IVaultFactory {
     error StakingContractMustBeContract();
     error QuoterMustBeContract();
     error UnlockPeriodTooLong();
+    error StakingPercentageCannotBeZero();
+    error StakingPercentageCannotBeGreaterThanMaxBips();
 
     struct VaultInfo {
         address vault;
@@ -48,6 +51,7 @@ interface IVaultFactory {
     event ScoringContractSet(address indexed scoringContract);
     event TreasuryContractSet(address indexed treasuryContract);
     event StakingContractSet(address indexed stakingContract);
+    event StakingPercentageSet(uint256 indexed stakingPercentage);
     event VaultCreated(address indexed vault, address indexed entity, VaultInfo vaultInfo);
 
     function ORACLE() external view returns (IOracle);
@@ -57,6 +61,7 @@ interface IVaultFactory {
     function SCORING() external view returns (IScoring);
     function MAX_BIPS() external view returns (uint256);
     function COLLATERAL_PERCENTAGE() external view returns (uint256);
+    function stakingPercentage() external view returns (uint256);
     function vaults(address _vault) external view returns (
         address vault,
         address entity, 
@@ -81,6 +86,7 @@ interface IVaultFactory {
     function setTreasuryContract(address _treasuryContract) external;
     function setStakingContract(address _stakingContract) external;
     function setLicenseContract(address _licenseContract) external;
+    function setStakingPercentage(uint256 _stakingPercentage) external;
     function getIsValidVault(address _vault) external view returns (bool);
     function getVaultEntity(address _vault) external view returns (address);
     function getCollateralAmount(address _vault) external view returns (uint256);

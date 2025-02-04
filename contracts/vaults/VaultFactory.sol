@@ -1,9 +1,10 @@
 // SPDX-License-Identifier: UNLICENSED
 pragma solidity ^0.8.27;
 
+import {AccessControl} from "@openzeppelin/contracts/access/AccessControl.sol";
 import {Clones} from "@openzeppelin/contracts/proxy/Clones.sol";
-import {Ownable} from "@openzeppelin/contracts/access/Ownable.sol";
 import {Vault} from "./Vault.sol";
+
 
 import {IVaultFactory} from "../interfaces/vaults/IVaultFactory.sol";
 import {ITreasury} from "../interfaces/vaults/ITreasury.sol";
@@ -12,7 +13,7 @@ import {IScoring} from "../interfaces/vaults/IScoring.sol";
 import {IOracle} from "../interfaces/vaults/IOracle.sol";
 import {IStaking} from "../interfaces/vaults/IStaking.sol";
 
-contract VaultFactory is Ownable, IVaultFactory {
+contract VaultFactory is AccessControl, IVaultFactory {
     using Clones for address;
 
     uint256 public constant MAX_BIPS = 100_00;
@@ -32,6 +33,8 @@ contract VaultFactory is Ownable, IVaultFactory {
     IScoring public SCORING;
     IStaking public STAKING;
 
+    uint256 public stakingPercentage = 1_00;
+
     VaultInfo[] public allVaults;
     mapping(address => VaultInfo) public vaults;
 
@@ -44,20 +47,21 @@ contract VaultFactory is Ownable, IVaultFactory {
     }
 
     constructor(
-        address _owner,
+        address _admin,
         address _depositToken,
         address _goilToken,
         address _oracle,
         address _routerV2,
         address _routerV3,
         address _quoter
-    ) Ownable(_owner) {
+    ) {
+        if (_admin == address(0)) revert AdminCannotBeZeroAddress();
         if (!_isContract(_oracle)) revert OracleMustBeContract();
         if (!_isContract(_depositToken)) revert DepositTokenMustBeContract();
         if (!_isContract(_routerV2)) revert RouterV2MustBeContract();
         if (!_isContract(_routerV3)) revert RouterV3MustBeContract();
         if (!_isContract(_quoter)) revert QuoterMustBeContract();
-
+        
         ORACLE = IOracle(_oracle);
         DEPOSIT_TOKEN = _depositToken;
         GOIL_TOKEN = _goilToken;
@@ -65,6 +69,8 @@ contract VaultFactory is Ownable, IVaultFactory {
         ROUTER_V3 = _routerV3;
         QUOTER = _quoter;
         VAULT_IMPLEMENTATION = address(new Vault());
+
+        _grantRole(DEFAULT_ADMIN_ROLE, _admin);
     }
 
     function createVault(
@@ -106,7 +112,8 @@ contract VaultFactory is Ownable, IVaultFactory {
             promisedCap,
             _startTime,
             fundingEndTime,
-            unlockEndTime
+            unlockEndTime,
+            stakingPercentage
         );
 
         uint256 refundableAmount = ORACLE.getPaymentAmountForTokens(_desiredCap);
@@ -132,7 +139,7 @@ contract VaultFactory is Ownable, IVaultFactory {
         emit VaultCreated(address(vault), msg.sender, newVault);
     }
 
-    function setLicenseContract(address _licenseContract) public onlyOwner {
+    function setLicenseContract(address _licenseContract) public onlyRole(DEFAULT_ADMIN_ROLE) {
         if (!_isContract(_licenseContract)) revert LicenseContractMustBeContract();
         if (address(LICENSE) != address(0)) revert LicenseContractAlreadySet();
 
@@ -140,7 +147,7 @@ contract VaultFactory is Ownable, IVaultFactory {
         emit LicenseContractSet(_licenseContract);
     }
 
-    function setScoringContract(address _scoringContract) public onlyOwner {
+    function setScoringContract(address _scoringContract) public onlyRole(DEFAULT_ADMIN_ROLE) {
         if (!_isContract(_scoringContract)) revert ScoringContractMustBeContract();
         if (address(SCORING) != address(0)) revert ScoringContractAlreadySet();
 
@@ -148,7 +155,7 @@ contract VaultFactory is Ownable, IVaultFactory {
         emit ScoringContractSet(_scoringContract);
     }
 
-    function setTreasuryContract(address _treasuryContract) public onlyOwner {
+    function setTreasuryContract(address _treasuryContract) public onlyRole(DEFAULT_ADMIN_ROLE) {
         if (!_isContract(_treasuryContract)) revert TreasuryContractMustBeContract();
         if (address(TREASURY) != address(0)) revert TreasuryContractAlreadySet();
 
@@ -156,12 +163,20 @@ contract VaultFactory is Ownable, IVaultFactory {
         emit TreasuryContractSet(_treasuryContract);
     }
 
-    function setStakingContract(address _stakingContract) public onlyOwner {
+    function setStakingContract(address _stakingContract) public onlyRole(DEFAULT_ADMIN_ROLE) {
         if (!_isContract(_stakingContract)) revert StakingContractMustBeContract();
         if (address(STAKING) != address(0)) revert StakingContractAlreadySet();
 
         STAKING = IStaking(_stakingContract);
         emit StakingContractSet(_stakingContract);
+    }
+
+    function setStakingPercentage(uint256 _stakingPercentage) public onlyRole(DEFAULT_ADMIN_ROLE) {
+        if (_stakingPercentage > MAX_BIPS) revert StakingPercentageCannotBeGreaterThanMaxBips();
+        if (_stakingPercentage == 0) revert StakingPercentageCannotBeZero();
+
+        stakingPercentage = _stakingPercentage;
+        emit StakingPercentageSet(_stakingPercentage);
     }
 
     function getIsValidVault(address _vault) public view returns (bool) {
