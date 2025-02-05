@@ -29,7 +29,7 @@ interface IStaking {
     function unstakeTokens(address _to) external;
     function claimReward(address _to) external;
     function transferReward(uint256 _amount) external;
-    function getCurrentAPR() external view returns (uint256);
+    function getCurrentAPY() external view returns (uint256);
     function getRewardPerBlock() external view returns (uint256);
     function getPendingRewardByUser(address _user) external view returns (uint256);
     function getPendingRewardByUsers(address[] memory _users) external view returns (uint256[] memory);

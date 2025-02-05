@@ -74,7 +74,15 @@ contract Staking is IStaking {
         emit Staked(msg.sender, _amount);
     }
 
-    function unstakeTokens(address _to) external {
+    function unstakeTokens() external {
+        unstakeTokens(msg.sender);
+    }
+
+    function claimReward() external {
+        claimReward(msg.sender);
+    }
+
+    function unstakeTokens(address _to) public {
         UserStake storage user = userStakes[msg.sender];
 
         uint256 stakedAmount = user.stakedAmount;
@@ -96,7 +104,7 @@ contract Staking is IStaking {
         emit Unstaked(msg.sender, stakedAmount);
     }
 
-    function claimReward(address _to) external {
+    function claimReward(address _to) public {
         UserStake storage user = userStakes[msg.sender];
 
         _updateRewards();
@@ -138,7 +146,7 @@ contract Staking is IStaking {
         return block.number > endStakingBlock ? 0 : rewardPerBlock;
     }
 
-    function getCurrentAPR() external view returns (uint256) {
+    function getCurrentAPY() external view returns (uint256) {
         uint256 currentRewardPerBlock = getRewardPerBlock();
 
         if (currentRewardPerBlock == 0) {
@@ -149,7 +157,7 @@ contract Staking is IStaking {
         uint256 rewardPerYear = currentRewardPerBlock * oneYearInBlocks;
 
         if (totalStaked == 0) {
-            return 0;
+            return rewardPerYear * MAX_BIPS;
         }
 
         return (rewardPerYear * MAX_BIPS) / totalStaked;
