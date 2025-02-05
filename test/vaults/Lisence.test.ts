@@ -48,7 +48,6 @@ describe("GoilLicense", function () {
 		totalFeeWithCollateral = COLLATERAL_AMOUNT + licenseMonthlyFee * 12n + applicationFee;
     });
 
-
     describe("Deployment Functionality", function () {
         it("Should set correct quadrata reader contract", async function () {
             expect(await license.QADRATA_READER()).to.equal(qadrataReader.target);
@@ -160,7 +159,6 @@ describe("GoilLicense", function () {
                     0
                 )
             ).to.be.revertedWithCustomError(license, "FeesCannotBeZero");
-
         });
 
         it("Should revert calling main function without setup scoring contract", async function () {

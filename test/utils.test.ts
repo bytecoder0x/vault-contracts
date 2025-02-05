@@ -59,12 +59,12 @@ export const deployAllContracts = async () => {
 	const vaultFactoryFactory = await ethers.getContractFactory("VaultFactory");
 	const vaultFactory = await vaultFactoryFactory.deploy(
 		admin.address,
-		stableToken.target,
 		goilToken.target,
 		oracle.target,
 		mockRouterV2.target,
 		mockRouterV3.target,
-		mockQuoter.target
+		mockQuoter.target,
+		[stableToken.target]
 	);
 	await vaultFactory.waitForDeployment();
 
@@ -179,7 +179,7 @@ export const createAndRepayVault = async (
 	const requiredCollateral = await treasury.getRequiredCollateral(desiredCap);
 	await goilToken.connect(entity).mint(entity.address, requiredCollateral);
 	await goilToken.connect(entity).approve(treasury.target, requiredCollateral);
-	await vaultFactory.connect(entity).createVault(rate, desiredCap, startTime, fundingPeriod, unlockPeriod);
+	await vaultFactory.connect(entity).createVault(stableToken.target, rate, desiredCap, startTime, fundingPeriod, unlockPeriod);
 	const vaults = await vaultFactory.getAllVaults();
 	const vault = await ethers.getContractAt("Vault", vaults[indexVault].vault);
 

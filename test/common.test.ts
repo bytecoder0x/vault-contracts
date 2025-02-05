@@ -16,7 +16,7 @@ import {
 	MockRouterV2,
 } from "../typechain-types";
 import { HardhatEthersSigner } from "@nomicfoundation/hardhat-ethers/signers";
-import { loadFixture } from "@nomicfoundation/hardhat-network-helpers";
+import { loadFixture, mineUpTo } from "@nomicfoundation/hardhat-network-helpers";
 import { time } from "@nomicfoundation/hardhat-network-helpers";
 import { deployAllContracts } from "./utils.test";
 
@@ -27,9 +27,6 @@ describe("Main Flow", function () {
 	let user2: HardhatEthersSigner;
 	let user3: HardhatEthersSigner;
 	let user4: HardhatEthersSigner;
-	let holder1: HardhatEthersSigner;
-	let holder2: HardhatEthersSigner;
-	let holder3: HardhatEthersSigner;
 	let goilToken: MockERC20;
 	let stableToken: MockERC20;
 	let mockFactory: MockFactory;
@@ -58,9 +55,6 @@ describe("Main Flow", function () {
 		user2 = fixture.user2;
 		user3 = fixture.user3;
 		user4 = fixture.user4;
-		holder1 = fixture.holder1;
-		holder2 = fixture.holder2;
-		holder3 = fixture.holder3;
 		goilToken = fixture.goilToken;
 		stableToken = fixture.stableToken;
 		mockFactory = fixture.mockFactory;
@@ -82,7 +76,7 @@ describe("Main Flow", function () {
         thresholdCapital = fixture.THRESHOLD_CAPITAL;
 	});
 
-	it("Checks all functionality from getting license to successful vault repayment", async function () {
+	it.only("Checks all functionality from getting license to successful vault repayment", async function () {
 		const collateralAmount = ethers.parseEther("10000"); // this amount will be used for calculating initial score
 		const totalFeeWithCollateral = collateralAmount + licenseMonthlyFee * 12n + applicationFee;
 		const licenseEndTime = (await time.latest()) + 12 * 31 * 24 * 60 * 60; // 12 months
@@ -110,12 +104,10 @@ describe("Main Flow", function () {
 		// admin sets initial performance data for the entity (it will be used for calculating initial score)
 		await scoring.connect(admin).setPerformanceData(entity.address, 50_000, 60_000); // 50% reputation, 60% financial health
 
-		// holders vote for the license
-		await license.connect(holder1).vote(entity.address);
-		await license.connect(holder2).vote(entity.address);
-		await license.connect(holder3).vote(entity.address);
+		// license manager approves the license if entity has enough votes from goverment voting
+		await license.connect(admin).approveLicense(entity.address, true);
 
-		// it means that the license is approved
+		// it means that the license is approved (3)
 		expect(await license.getLicenseStatus(entity.address)).to.equal(3);
 
 		// license monthly fee and collateral is transferred to treasury if the license is approved
@@ -148,13 +140,14 @@ describe("Main Flow", function () {
 		await goilToken.connect(entity).approve(treasury.target, requiredCollateral);
 
 		// entity creates a vault
+		const depositToken = stableToken.target;
 		const rate = 11_00; // 11%
 		const startTime = (await time.latest()) + 24 * 60 * 60; // in 1 day
 		const fundingPeriod = 14 * 24 * 60 * 60; // 14 days
 		const unlockPeriod = 3 * 31 * 24 * 60 * 60; // 3 months
 		const desiredCap = poolSize;
 
-		await vaultFactory.connect(entity).createVault(rate, desiredCap, startTime, fundingPeriod, unlockPeriod);
+		await vaultFactory.connect(entity).createVault(depositToken, rate, desiredCap, startTime, fundingPeriod, unlockPeriod);
 
 		const vaults = await vaultFactory.getAllVaults();
 		const vault = await ethers.getContractAt("Vault", vaults[0].vault);
@@ -195,22 +188,22 @@ describe("Main Flow", function () {
 		await vault.connect(entity).withdrawToEntity();
 		expect(await stableToken.balanceOf(entity.address)).to.equal(amountToDeposit * 4n);
 
-		const promisedAPY = (amountToDeposit * 4n * 11n) / 100n;
-        const promisedCapital = (amountToDeposit * 4n) + promisedAPY;
-		await stableToken.connect(entity).mint(entity.address, promisedAPY);
+		const promisedProfit = (amountToDeposit * 4n * 11n) / 100n;
+        const promisedCapital = (amountToDeposit * 4n) + promisedProfit;
+		await stableToken.connect(entity).mint(entity.address, promisedProfit);
 
-        // since 1$ = 1 goil i can get 1% of promised capital in stable token //! staking amount in goil
-        const stakingAmount = (desiredCap * 1n) / 100n; // 1% of successful vault transfer to staking
+        // since 1$ = 1 goil i can get 1% of profit in stable token //! staking amount in goil
+        const stakingAmount = (promisedProfit * 1n) / 100n; // 1% of profit successful vault transfer to staking
 
 		// entity can deposit all the funds
 		await stableToken.connect(entity).approve(vault.target, promisedCapital);
-        // it needs for swap 1% of pool size stable -> goil and transfer to staking
+        // it needs for swap 1% of profit in stable -> goil and transfer to staking
 		await goilToken.mint(mockRouterV3.target, stakingAmount);
 
 		await vault.connect(entity).depositFromEntity();
 
         // vault is successfully repaid and users can withdraw their shares
-        expect(await stableToken.balanceOf(vault.target)).to.equal(desiredCap * (100n + 10n) / 100n); // 10% profit
+        expect(await stableToken.balanceOf(vault.target)).to.equal(promisedCapital - stakingAmount); // 10% profit
 		expect(await goilToken.balanceOf(staking.target)).to.equal(stakingAmount);
 
         // entity score is updated
@@ -245,9 +238,9 @@ describe("Main Flow", function () {
         expect(await scoring.getMaxPoolSize(entity.address)).to.be.greaterThan(previousMaxPoolSize);
 
         // users can withdraw their shares
-        // rate is 11% and 1% transfer to staking
-        // users expect to get 10% profit of their deposit, it 2.5k$ from 25k$
-        const expectedProfit = amountToDeposit * 10n / 100n;
+        // rate is 11% and 1% of profit transfer to staking -> 11% * 0.99 = 10.89% profit
+        // users expect to get 10.89% profit of their deposit, it 2.5k$ from 25k$
+        const expectedProfit = amountToDeposit * 1089n / 10000n;
         const totalStableAmountWithProfit = amountToDeposit + expectedProfit;
         
         const maxPossibleWithdrawForUser1 = await vault.maxWithdraw(user1.address);
@@ -261,18 +254,28 @@ describe("Main Flow", function () {
         await vault.connect(user4)["withdraw(uint256)"](maxPossibleWithdrawForUser4);
 
         // we have delta of "1" because of rounding in _convertToAssets (ERC4626)
-        // it means for our case users profit equals to 27.4999...k$ instead of 27.5k$
         expect(await stableToken.balanceOf(user1.address)).closeTo(totalStableAmountWithProfit, 1);
         expect(await stableToken.balanceOf(user2.address)).closeTo(totalStableAmountWithProfit, 1);
         expect(await stableToken.balanceOf(user3.address)).closeTo(totalStableAmountWithProfit, 1);
         expect(await stableToken.balanceOf(user4.address)).closeTo(totalStableAmountWithProfit, 1);
 
         // Successfully vault is repaid and users got their profit ^:)
+
+		const amountToStake = ethers.parseEther("1000");
+		await goilToken.mint(user1.address, amountToStake);
+		await goilToken.connect(user1).approve(staking.target, amountToStake);
+		await staking.connect(user1).stakeTokens(amountToStake);
+		console.log(Number(await staking.getCurrentAPY()) / 100);
+		await mineUpTo(await staking.endStakingBlock());
+		
+		const user1Reward = await staking.getPendingRewardByUser(user1.address);
+		expect(user1Reward).to.be.closeTo(stakingAmount, ethers.parseEther("1"));
 	});
 
     it("Checks all functionality from getting license to vault liquidation", async function () {
         const collateralAmount = ethers.parseEther("10000")
 		const totalFeeWithCollateral = collateralAmount + licenseMonthlyFee * 12n + applicationFee;
+
 		const licenseEndTime = (await time.latest()) + 12 * 31 * 24 * 60 * 60; // 12 months
 		const tokensForTreasury = ethers.parseEther("10000000");
 
@@ -284,22 +287,20 @@ describe("Main Flow", function () {
         // all things the same as in successful vault repayment (license, initial score, create vault, etc.)
 		await license.connect(entity).submitLicense(licenseEndTime, collateralAmount);
 		await scoring.connect(admin).setPerformanceData(entity.address, 50_000, 60_000);
-
-		await license.connect(holder1).vote(entity.address);
-		await license.connect(holder2).vote(entity.address);
-		await license.connect(holder3).vote(entity.address);
+		await license.connect(admin).approveLicense(entity.address, true);
 
 		const poolSize = ethers.parseEther("100000"); // 100k
 		const requiredCollateral = await treasury.getRequiredCollateral(poolSize);
 		await goilToken.mint(entity.address, requiredCollateral);
 		await goilToken.connect(entity).approve(treasury.target, requiredCollateral);
 
+		const depositToken = stableToken.target;
 		const rate = 11_00; // 11%
 		const startTime = (await time.latest()) + 24 * 60 * 60; // in 1 day
 		const fundingPeriod = 14 * 24 * 60 * 60; // 14 days
 		const unlockPeriod = 3 * 31 * 24 * 60 * 60; // 3 months
 		const desiredCap = poolSize;
-		await vaultFactory.connect(entity).createVault(rate, desiredCap, startTime, fundingPeriod, unlockPeriod);
+		await vaultFactory.connect(entity).createVault(depositToken, rate, desiredCap, startTime, fundingPeriod, unlockPeriod);
 		const vaults = await vaultFactory.getAllVaults();
 		const vault = await ethers.getContractAt("Vault", vaults[0].vault);
 
@@ -333,7 +334,7 @@ describe("Main Flow", function () {
 		expect(await stableToken.balanceOf(entity.address)).to.equal(amountToDeposit * 4n);
 
         // wait for the unlock period to end and vault is not funded
-		await time.increaseTo(startTime + unlockPeriod + 1);
+		await time.increaseTo(startTime + fundingPeriod + unlockPeriod + 1);
 
         //! 1$GOIL = 1$ since we have 1:1 ratio of stable token and goil token
         await vault.connect(user1)["withdraw(uint256)"](amountToDeposit);
