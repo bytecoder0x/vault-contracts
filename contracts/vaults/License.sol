@@ -89,6 +89,14 @@ contract License is AccessControl, ILicense {
         licenses[msg.sender].approved = false;
         licenses[msg.sender].confirmedByAdmin = false;
 
+        allPendingLicenses.push(LicenseInfo({
+            entity: msg.sender,
+            startTime: licenseStartTime,
+            endTime: _licenseEndTime,
+            approved: false,
+            confirmedByAdmin: false
+        }));
+
         emit SubmittedLicense(msg.sender, licenseStartTime, _licenseEndTime, licenseFee, _collateralAmount);
     }
 
@@ -113,6 +121,15 @@ contract License is AccessControl, ILicense {
         }
 
         licenses[_entity].confirmedByAdmin = true;
+
+        uint256 totalPendingLicenses = allPendingLicenses.length; // for gas optimization
+        for (uint256 i = 0; i < totalPendingLicenses; i++) {
+            if (allPendingLicenses[i].entity == _entity) {
+                allPendingLicenses[i] = allPendingLicenses[totalPendingLicenses - 1];
+                allPendingLicenses.pop();
+                break;
+            }
+        }
 
         emit LicenseApproved(_entity, _approved);
     }
@@ -155,13 +172,17 @@ contract License is AccessControl, ILicense {
         emit LicenseExpirationLimitUpdated(_licenseExpirationLimit);
     }
 
+    function getLicenseMonthlyAndApplicationFee() public view returns (uint256, uint256) {
+        return (licenseMonthlyFee, applicationFee);
+    }
+
     function getLicenseStatus(address _entity) public view returns (LicenseState) {
         LicenseInfo memory license = licenses[_entity];
         uint256 currentTime = block.timestamp;
 
         if (license.startTime == 0) return LicenseState.UNINITIALIZED;
         if ((license.startTime > currentTime && !license.approved) || !license.confirmedByAdmin) return LicenseState.PENDING;
-        if (!license.approved) return LicenseState.REJECTED;
+        if (!license.approved && license.confirmedByAdmin) return LicenseState.REJECTED;
         if (license.endTime < currentTime) return LicenseState.EXPIRED;
 
         return LicenseState.ACTIVE;
@@ -186,8 +207,18 @@ contract License is AccessControl, ILicense {
         return (status, license.startTime, license.endTime, license.approved, license.confirmedByAdmin);
     }
 
+    function getAllPendingLicenses() public view returns (LicenseInfo[] memory) {
+        return allPendingLicenses;
+    }
+
+    function getTotalPendingLicenses() public view returns (uint256) {
+        return allPendingLicenses.length;
+    }
+
+
     function _isContract(address _address) private view returns (bool) {
         uint32 size;
+
         assembly {
             size := extcodesize(_address)
         }

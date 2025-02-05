@@ -13,6 +13,7 @@ interface ILicense {
     }
 
     struct LicenseInfo {
+        address entity;
         uint256 startTime;
         uint256 endTime;
         bool approved;
