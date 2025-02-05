@@ -63,6 +63,11 @@ contract License is AccessControl, ILicense {
 
     function submitLicense(uint256 _licenseEndTime, uint256 _collateralAmount) external withSetupScoringContract {
         uint256 licenseStartTime = block.timestamp + votingPeriod;
+
+        if (getLicenseIsActive(msg.sender)) {
+            licenseStartTime = licenses[msg.sender].endTime + votingPeriod;
+        }
+
         uint256 licensePeriod = _licenseEndTime - licenseStartTime;
 
         if (QADRATA_READER.balanceOf(msg.sender, REQUIRED_KYB) == 0) revert ApplicantMustHaveQadrataKYB();

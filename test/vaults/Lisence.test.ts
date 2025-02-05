@@ -252,6 +252,26 @@ describe("GoilLicense", function () {
             expect(await goilToken.balanceOf(treasury.target)).to.equal(licenseMonthlyFee * 12n + applicationFee * 2n + COLLATERAL_AMOUNT);
         });
 
+        it("Should successfully submit a license if previous active", async function () {
+            const licenseEndTime = BigInt(await time.latest()) + (365n * 24n * 3600n) + BigInt(VOTING_PERIOD); 
+            await submitLicense(licenseEndTime);
+
+            await time.increase(10 * 24 * 3600); // 10 days
+            await license.approveLicense(applicant.address, true);
+
+            expect(await license.getLicenseIsActive(applicant.address)).to.equal(true); 
+            expect(await license.getLicenseStatus(applicant.address)).to.equal(3); // ACTIVE
+            
+            const newLicenseEndTime = licenseEndTime + (365n * 24n * 3600n) + BigInt(VOTING_PERIOD);
+            await submitLicense(newLicenseEndTime);
+
+            const licenseInfo = await license.licenses(applicant.address);
+            expect(licenseInfo.endTime).to.equal(newLicenseEndTime);
+            expect(licenseInfo.approved).to.equal(false);
+            expect(licenseInfo.confirmedByAdmin).to.equal(false);
+            expect(await goilToken.balanceOf(treasury.target)).to.equal(licenseMonthlyFee * 12n + applicationFee * 2n + COLLATERAL_AMOUNT);
+        });
+
         it("Should revert if applicant doesn't have the required KYB", async function () {
             // Applicant doesn't have KYB
             await goilToken.connect(applicant).mint(applicant.address, ethers.parseEther("1000"));

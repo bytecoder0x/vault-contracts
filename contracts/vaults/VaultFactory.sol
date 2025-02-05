@@ -134,6 +134,7 @@ contract VaultFactory is AccessControl, IVaultFactory {
             refundableAmount: refundableAmount
         });
 
+        isVault[address(vault)] = true;
         vaultsByEntity[msg.sender].push(newVault);
         vaults[address(vault)] = newVault;
         allVaults.push(newVault);

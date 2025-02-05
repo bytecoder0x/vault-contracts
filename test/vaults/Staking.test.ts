@@ -5,7 +5,7 @@ import { loadFixture, mineUpTo, mine } from "@nomicfoundation/hardhat-network-he
 import { expect } from "chai";
 import { ethers } from "hardhat";
 
-describe.only("GoilStaking", function () {
+describe("GoilStaking", function () {
     let staking: Staking;
     let vaultFactory: VaultFactory;
     let license: License;
@@ -59,7 +59,7 @@ describe.only("GoilStaking", function () {
     });
 
     describe("Staking Functionality", function () {
-        it.only("Should set correct staking period", async function () {
+        it("Should set correct staking period", async function () {
             const stakeAmount = ethers.parseEther("100");
             await goilToken.connect(user1).mint(user1.address, stakeAmount);
             await goilToken.connect(user1).approve(staking.target, stakeAmount);
