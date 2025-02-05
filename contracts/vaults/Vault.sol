@@ -181,6 +181,19 @@ contract Vault is Initializable, ERC4626Upgradeable, OwnableUpgradeable, IVault 
         return (profit * stakingPercentage) / MAX_BIPS;
     }
 
+    function getVaultState() public view returns (VaultState) {
+        uint256 currentTime = block.timestamp;
+
+        if (currentTime < startTime) return VaultState.NOT_STARTED;
+        if (currentTime > fundingEndTime && currentTime < unlockEndTime) return VaultState.FUNDING;
+        if (isNotRaisedDesiredCap()) return VaultState.NOT_RAISED;
+        if (isLiquidatable()) return VaultState.LIQUIDATED;
+        if (isVaultSuccess) return VaultState.SUCCESS;
+        
+        return VaultState.LOCKED;
+    }
+
+
     function isLiquidatable() public view returns (bool) {
         uint256 currentTime = block.timestamp;
 

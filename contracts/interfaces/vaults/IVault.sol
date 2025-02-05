@@ -7,6 +7,15 @@ import {IVaultFactory} from "./IVaultFactory.sol";
 import {IScoring} from "./IScoring.sol";
 
 interface IVault {
+    enum VaultState {
+        NOT_STARTED,
+        FUNDING,
+        NOT_RAISED,
+        LOCKED,
+        SUCCESS,
+        LIQUIDATED
+    }
+
     enum Swap {
         V2,
         V3_500,
@@ -63,6 +72,7 @@ interface IVault {
     function withdraw(uint256 _amountToWithdraw) external returns (uint256);
     function depositFromEntity() external;
     function withdrawToEntity() external;
+    function getVaultState() external view returns (VaultState);
     function getAmountForStaking() external view returns (uint256);
     function isLiquidatable() external view returns (bool);
     function isNotRaisedDesiredCap() external view returns (bool);

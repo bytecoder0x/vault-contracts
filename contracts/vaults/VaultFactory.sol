@@ -111,7 +111,7 @@ contract VaultFactory is AccessControl, IVaultFactory {
         if (unlockEndTime > maxAllowedUnlockPeriod) revert UnlockPeriodTooLong();
 
         uint256 maxPoolSize = SCORING.getMaxPoolSize(msg.sender);
-        uint256 maxAllowedPoolSize = maxPoolSize + (_interestRate * _lockPeriod) / MAX_BIPS;
+        uint256 maxAllowedPoolSize = _desiredCap + (_interestRate * _lockPeriod) / MAX_BIPS;
         uint256 promisedCap = (_desiredCap * (MAX_BIPS + _interestRate)) / MAX_BIPS;
 
         if (_desiredCap > maxPoolSize) revert NooAllowedPoolSize();
