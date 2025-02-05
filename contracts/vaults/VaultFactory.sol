@@ -18,10 +18,12 @@ contract VaultFactory is AccessControl, IVaultFactory {
     uint256 public constant MAX_BIPS = 100_00;
     uint256 public constant COLLATERAL_PERCENTAGE = 10_00;
 
+    uint256 public constant VAULT_EXPIRY_LIMIT_AFTER_LICENSE = 30 days;
+
     IOracle public immutable ORACLE;
-    address public immutable DEPOSIT_TOKEN;
     address public immutable GOIL_TOKEN;
     address public immutable VAULT_IMPLEMENTATION;
+
 
     address public immutable ROUTER_V3;
     address public immutable ROUTER_V2;
@@ -34,11 +36,18 @@ contract VaultFactory is AccessControl, IVaultFactory {
 
     uint256 public stakingPercentage = 1_00;
 
+    address[] public depositTokens;
     VaultInfo[] public allVaults;
 
     mapping(address => VaultInfo[]) public vaultsByEntity;
     mapping(address => VaultInfo) public vaults;
     mapping(address => bool) public isVault;
+    mapping(address => bool) public isDepositToken;
+
+    modifier withExistingDepositToken(address _depositToken) {
+        if (!isDepositToken[_depositToken]) revert DepositTokenDoesNotExist();
+        _;
+    }
 
     modifier withSetupNecessaryContracts() {
         if (address(SCORING) == address(0)) revert ScoringContractNotSet();
@@ -50,38 +59,45 @@ contract VaultFactory is AccessControl, IVaultFactory {
 
     constructor(
         address _admin,
-        address _depositToken,
         address _goilToken,
         address _oracle,
         address _routerV2,
         address _routerV3,
-        address _quoter
+        address _quoter,
+        address[] memory _depositTokens
     ) {
         if (_admin == address(0)) revert AdminCannotBeZeroAddress();
         if (!_isContract(_oracle)) revert OracleMustBeContract();
-        if (!_isContract(_depositToken)) revert DepositTokenMustBeContract();
         if (!_isContract(_routerV2)) revert RouterV2MustBeContract();
         if (!_isContract(_routerV3)) revert RouterV3MustBeContract();
         if (!_isContract(_quoter)) revert QuoterMustBeContract();
+        if (_depositTokens.length == 0) revert DepositTokensCannotBeZero();
+
+        for (uint256 i = 0; i < _depositTokens.length; i++) {
+            if (!_isContract(_depositTokens[i])) revert DepositTokenMustBeContract();
+            depositTokens.push(_depositTokens[i]);
+            isDepositToken[_depositTokens[i]] = true;
+        }
         
         ORACLE = IOracle(_oracle);
-        DEPOSIT_TOKEN = _depositToken;
         GOIL_TOKEN = _goilToken;
         ROUTER_V2 = _routerV2;
         ROUTER_V3 = _routerV3;
         QUOTER = _quoter;
+
         VAULT_IMPLEMENTATION = address(new Vault());
 
         _grantRole(DEFAULT_ADMIN_ROLE, _admin);
     }
 
     function createVault(
+        address _depositToken,
         uint256 _interestRate,
         uint256 _desiredCap,
         uint256 _startTime,
         uint256 _fundingPeriod,
         uint256 _lockPeriod
-    ) external withSetupNecessaryContracts {
+    ) external withSetupNecessaryContracts withExistingDepositToken(_depositToken) {
         uint256 fundingEndTime = _startTime + _fundingPeriod;
         uint256 unlockEndTime = fundingEndTime + _lockPeriod;
         
@@ -91,7 +107,8 @@ contract VaultFactory is AccessControl, IVaultFactory {
         if (fundingEndTime <= _startTime) revert StartTimeMustBeBeforeFundingEndTime();
         if (unlockEndTime <= fundingEndTime) revert FundingEndTimeMustBeBeforeUnlockEndTime();
 
-        if (LICENSE.getLicenseExpirationTime(msg.sender) < unlockEndTime) revert UnlockPeriodTooLong();
+        uint256 maxAllowedUnlockPeriod = LICENSE.getLicenseExpirationTime(msg.sender) + VAULT_EXPIRY_LIMIT_AFTER_LICENSE;
+        if (unlockEndTime > maxAllowedUnlockPeriod) revert UnlockPeriodTooLong();
 
         uint256 maxPoolSize = SCORING.getMaxPoolSize(msg.sender);
         uint256 maxAllowedPoolSize = maxPoolSize + (_interestRate * _lockPeriod) / MAX_BIPS;
@@ -109,7 +126,7 @@ contract VaultFactory is AccessControl, IVaultFactory {
             address(TREASURY),
             address(STAKING),
             GOIL_TOKEN,
-            DEPOSIT_TOKEN,
+            _depositToken,
             ROUTER_V2,
             ROUTER_V3,
             QUOTER,
@@ -125,6 +142,7 @@ contract VaultFactory is AccessControl, IVaultFactory {
         VaultInfo memory newVault = VaultInfo({
             vault: address(vault),
             entity: msg.sender,
+            depositToken: _depositToken,
             interestRate: _interestRate,
             desiredCap: _desiredCap,
             startTime: _startTime,
@@ -144,8 +162,35 @@ contract VaultFactory is AccessControl, IVaultFactory {
         emit VaultCreated(address(vault), msg.sender, newVault);
     }
 
+    function addDepositToken(address _depositToken) public onlyRole(DEFAULT_ADMIN_ROLE) {
+        if (!_isContract(_depositToken)) revert DepositTokenMustBeContract();
+        if (isDepositToken[_depositToken]) revert DepositTokenAlreadyExists();
+
+        isDepositToken[_depositToken] = true;
+        depositTokens.push(_depositToken);
+        emit DepositTokenAdded(_depositToken);
+    }
+
+    function removeDepositToken(address _depositToken) public onlyRole(DEFAULT_ADMIN_ROLE) {
+        uint256 totalDepositTokens = depositTokens.length;
+        if (totalDepositTokens == 1) revert CannotRemoveLastDepositToken();
+        if (!isDepositToken[_depositToken]) revert DepositTokenDoesNotExist();
+
+        isDepositToken[_depositToken] = false;
+        for (uint256 i = 0; i < totalDepositTokens; i++) {
+            if (depositTokens[i] == _depositToken) {
+                depositTokens[i] = depositTokens[totalDepositTokens - 1];
+                depositTokens.pop();
+                break;
+            }
+        }
+
+        emit DepositTokenRemoved(_depositToken);
+    }
+
     function setLicenseContract(address _licenseContract) public onlyRole(DEFAULT_ADMIN_ROLE) {
         if (!_isContract(_licenseContract)) revert LicenseContractMustBeContract();
+
         if (address(LICENSE) != address(0)) revert LicenseContractAlreadySet();
 
         LICENSE = ILicense(_licenseContract);

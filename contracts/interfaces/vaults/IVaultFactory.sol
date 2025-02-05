@@ -11,6 +11,10 @@ interface IVaultFactory {
     error RouterV2MustBeContract();
     error RouterV3MustBeContract();
     error DepositTokenMustBeContract();
+    error DepositTokenAlreadyExists();
+    error DepositTokenDoesNotExist();
+    error CannotRemoveLastDepositToken();
+    error DepositTokensCannotBeZero();
     error DesiredCapCannotBeZero(); 
     error InterestRateCannotBeZero();
     error StartTimeMustBeInFuture();
@@ -38,6 +42,7 @@ interface IVaultFactory {
     struct VaultInfo {
         address vault;
         address entity;
+        address depositToken;
         uint256 interestRate;
         uint256 desiredCap;
         uint256 startTime;
@@ -47,6 +52,8 @@ interface IVaultFactory {
         uint256 refundableAmount;
     }
 
+    event DepositTokenAdded(address indexed depositToken);
+    event DepositTokenRemoved(address indexed depositToken);
     event LicenseContractSet(address indexed licenseContract);
     event ScoringContractSet(address indexed scoringContract);
     event TreasuryContractSet(address indexed treasuryContract);
@@ -55,7 +62,6 @@ interface IVaultFactory {
     event VaultCreated(address indexed vault, address indexed entity, VaultInfo vaultInfo);
 
     function ORACLE() external view returns (IOracle);
-    function DEPOSIT_TOKEN() external view returns (address);
     function VAULT_IMPLEMENTATION() external view returns (address);
     function TREASURY() external view returns (ITreasury);
     function SCORING() external view returns (IScoring);
@@ -63,9 +69,11 @@ interface IVaultFactory {
     function COLLATERAL_PERCENTAGE() external view returns (uint256);
     function stakingPercentage() external view returns (uint256);
     function isVault(address _vault) external view returns (bool);
+    function isDepositToken(address _depositToken) external view returns (bool);
     function vaults(address _vault) external view returns (
         address vault,
         address entity, 
+        address depositToken,
         uint256 interestRate,
         uint256 desiredCap,
         uint256 startTime,
@@ -76,6 +84,7 @@ interface IVaultFactory {
     );
 
     function createVault(
+        address _depositToken,
         uint256 _interestRate,
         uint256 _desiredCap,
         uint256 _startTime,
@@ -83,12 +92,16 @@ interface IVaultFactory {
         uint256 _unlockPeriod
     ) external;
 
+    function addDepositToken(address _depositToken) external;
+    function removeDepositToken(address _depositToken) external;
+
     function setScoringContract(address _scoringContract) external;
     function setTreasuryContract(address _treasuryContract) external;
     function setStakingContract(address _stakingContract) external;
     function setLicenseContract(address _licenseContract) external;
     function setStakingPercentage(uint256 _stakingPercentage) external;
     function getVaultEntity(address _vault) external view returns (address);
+
     function getCollateralAmount(address _vault) external view returns (uint256);
     function getRefundableAmount(address _vault) external view returns (uint256);
     function getVault(address _vault) external view returns (VaultInfo memory);
