@@ -163,6 +163,10 @@ contract Staking is IStaking {
         return (rewardPerYear * MAX_BIPS) / totalStaked;
     }
 
+    function getStakedAmount(address _user) public view returns (uint256) {
+        return userStakes[_user].stakedAmount;
+    }
+
     function getPendingRewardByUser(address _user) public view returns (uint256) {
         UserStake memory user = userStakes[_user];
 
