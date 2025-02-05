@@ -114,7 +114,8 @@ contract VaultFactory is AccessControl, IVaultFactory {
         uint256 maxAllowedPoolSize = maxPoolSize + (_interestRate * _lockPeriod) / MAX_BIPS;
         uint256 promisedCap = (_desiredCap * (MAX_BIPS + _interestRate)) / MAX_BIPS;
 
-        if (_desiredCap > maxAllowedPoolSize) revert NooAllowedPoolSize();
+        if (_desiredCap > maxPoolSize) revert NooAllowedPoolSize();
+        if (maxPoolSize < maxAllowedPoolSize) revert HighInterestRate();
 
         uint256 refundableAmount = ORACLE.getPaymentAmountForTokens(_desiredCap);
         uint256 requiredCollateral = TREASURY.getRequiredCollateral(_desiredCap);

@@ -21,6 +21,7 @@ interface IVaultFactory {
     error StartTimeMustBeBeforeFundingEndTime();
     error FundingEndTimeMustBeBeforeUnlockEndTime();
     error NooAllowedPoolSize();
+    error HighInterestRate();
     error ScoringContractAlreadySet();
     error ScoringContractNotSet();
     error TreasuryContractCannotBeZeroAddress();
