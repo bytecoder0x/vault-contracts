@@ -3,7 +3,6 @@ pragma solidity ^0.8.27;
 
 import {IERC20Metadata} from "@openzeppelin/contracts/token/ERC20/extensions/IERC20Metadata.sol";
 import {IERC20} from "@openzeppelin/contracts/token/ERC20/IERC20.sol";
-import {IVaultFactory} from "../interfaces/vaults/IVaultFactory.sol";
 import {ITreasury} from "../interfaces/vaults/ITreasury.sol";
 import {IStaking} from "../interfaces/vaults/IStaking.sol";
 
@@ -14,7 +13,6 @@ contract Staking is IStaking {
     IERC20 public immutable STAKING_TOKEN;
     IERC20 public immutable REWARD_TOKEN;
 
-    IVaultFactory public immutable VAULT_FACTORY;
     ITreasury public immutable TREASURY;
 
     uint256 public immutable STAKING_TOKEN_PRECISION;
@@ -30,30 +28,22 @@ contract Staking is IStaking {
 
     mapping(address => UserStake) public userStakes;
 
-    modifier onlyVault() {
-        if (!VAULT_FACTORY.isVault(msg.sender)) revert OnlyVault();
-        _;
-    }
-
     constructor(
-        address _vaultFactory,
         address _treasury,
         address _stakingToken,
         address _rewardToken
     ) {
-        if (!_isContract(_vaultFactory)) revert VaultFactoryMustBeContract();
         if (!_isContract(_treasury)) revert TreasuryMustBeContract();
         if (!_isContract(_stakingToken)) revert StakingTokenMustBeContract();
         if (!_isContract(_rewardToken)) revert RewardTokenMustBeContract();
 
-        VAULT_FACTORY = IVaultFactory(_vaultFactory);
         TREASURY = ITreasury(_treasury);
         STAKING_TOKEN_PRECISION = 10 ** IERC20Metadata(_stakingToken).decimals();
         STAKING_TOKEN = IERC20(_stakingToken);
         REWARD_TOKEN = IERC20(_rewardToken);
     }
 
-    function stakeTokens(uint256 _amount) external {
+    function stakeTokens(uint256 _amount) public {
         if (_amount == 0) revert StakeAmountCannotBeZero();
 
         _updateRewards();
@@ -121,17 +111,13 @@ contract Staking is IStaking {
         emit ClaimReward(msg.sender, reward);
     }
 
-    function transferReward(uint256 _amount) external onlyVault {
+    function depositReward(uint256 _amount) public {
         _updateRewards();
         REWARD_TOKEN.transferFrom(msg.sender, address(this), _amount);
         
         uint256 currentBlock = block.number;
-        if (currentBlock > endStakingBlock) {
-            endStakingBlock = currentBlock + ONE_MONTH_IN_BLOCKS;
-        } else {
-            endStakingBlock += ONE_MONTH_IN_BLOCKS;
-        }
 
+        endStakingBlock = currentBlock + ONE_MONTH_IN_BLOCKS;
         totalReward += _amount;
 
         uint256 distributedReward = accRewardPerShare * totalStaked / STAKING_TOKEN_PRECISION;
@@ -139,7 +125,7 @@ contract Staking is IStaking {
 
         rewardPerBlock = currentRewards / (endStakingBlock - currentBlock);
 
-        emit RewardTransferred(msg.sender, _amount);
+        emit RewardDeposited(msg.sender, _amount);
     }
 
     function getRewardPerBlock() public view returns (uint256) {

@@ -21,7 +21,6 @@ interface IVault {
         V3_500,
         V3_3000,
         V3_10000
-
     }
 
     error WithdrawMoreThanMax();

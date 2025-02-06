@@ -15,7 +15,6 @@ import {IScoring} from "../interfaces/vaults/IScoring.sol";
 import {IVault} from "../interfaces/vaults/IVault.sol";
 import {IStaking} from "../interfaces/vaults/IStaking.sol";
 
-// TODO: enum for state of vault
 contract Vault is Initializable, ERC4626Upgradeable, OwnableUpgradeable, IVault {
     using SafeERC20Upgradeable for IERC20Upgradeable;
 
@@ -137,7 +136,7 @@ contract Vault is Initializable, ERC4626Upgradeable, OwnableUpgradeable, IVault 
 
             uint256 stakingAmountInGoil = _swap(getAmountForStaking(), address(this));
             GOIL_TOKEN.approve(address(STAKING), stakingAmountInGoil);
-            STAKING.transferReward(stakingAmountInGoil);
+            STAKING.depositReward(stakingAmountInGoil);
         } else {
             uint256 currentBalanceGoil = totalAssets();
             _updateAsset(DEPOSIT_TOKEN);
@@ -189,7 +188,7 @@ contract Vault is Initializable, ERC4626Upgradeable, OwnableUpgradeable, IVault 
         if (isNotRaisedDesiredCap()) return VaultState.NOT_RAISED;
         if (isLiquidatable()) return VaultState.LIQUIDATED;
         if (isVaultSuccess) return VaultState.SUCCESS;
-        
+
         return VaultState.LOCKED;
     }
 

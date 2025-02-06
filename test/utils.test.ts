@@ -97,7 +97,7 @@ export const deployAllContracts = async () => {
 	await scoring.waitForDeployment();
 
 	const stakingFactory = await ethers.getContractFactory("Staking");
-	const staking = await stakingFactory.deploy(vaultFactory.target, treasury.target, goilToken.target, goilToken.target);
+	const staking = await stakingFactory.deploy(treasury.target, goilToken.target, goilToken.target);
 	await staking.waitForDeployment();
 
 	await vaultFactory.setScoringContract(scoring.target);

@@ -24,7 +24,6 @@ contract VaultFactory is AccessControl, IVaultFactory {
     address public immutable GOIL_TOKEN;
     address public immutable VAULT_IMPLEMENTATION;
 
-
     address public immutable ROUTER_V3;
     address public immutable ROUTER_V2;
     address public immutable QUOTER;
@@ -246,9 +245,18 @@ contract VaultFactory is AccessControl, IVaultFactory {
         return vaults[_vault];
     }
 
+    function getVaultsByEntity(address _entity) public view returns (VaultInfo[] memory) {
+        return vaultsByEntity[_entity];
+    }
+
+    function getVaultsCountByEntity(address _entity) public view returns (uint256) {
+        return vaultsByEntity[_entity].length;
+    }
+
     function getAllVaults() public view returns (VaultInfo[] memory) {
         return allVaults;
     }
+
 
     function getVaultsCount() public view returns (uint256) {
         return allVaults.length;

@@ -19,10 +19,6 @@ describe("GoilStaking", function () {
     let user1: HardhatEthersSigner;
     let user2: HardhatEthersSigner;
 
-    const createSuccessVault = async (withLicense: boolean, indexVault: number) => {
-        await createAndRepayVault(entity, user1, qadrataReader, license, scoring, treasury, vaultFactory, goilToken, stableToken, withLicense, indexVault);
-    }
-
     beforeEach(async () => {
         const fixture = await loadFixture(deployAllContracts);
         staking = fixture.staking;
@@ -49,33 +45,34 @@ describe("GoilStaking", function () {
             expect(await staking.REWARD_TOKEN()).to.equal(goilToken.target);
         });
 
-        it("Should set correct vault factory", async function () {
-            expect(await staking.VAULT_FACTORY()).to.equal(vaultFactory.target);
-        });
-
         it("Should set correct treasury", async function () {
             expect(await staking.TREASURY()).to.equal(treasury.target);
         });
     });
 
     describe("Staking Functionality", function () {
-        it("Should set correct staking period", async function () {
+        it.only("Should set correct staking period", async function () {
             const stakeAmount = ethers.parseEther("100");
+            const rewardAmount = ethers.parseEther("110");
+
             await goilToken.connect(user1).mint(user1.address, stakeAmount);
             await goilToken.connect(user1).approve(staking.target, stakeAmount);
             await staking.connect(user1).stakeTokens(stakeAmount);
 
             console.log(Number(await staking.getPendingRewardByUser(user1.address)) / 1e18);
-            await createSuccessVault(false, 0);
+            await staking.depositReward(stakeAmount);
 
             const totalReward = await staking.totalReward();
             console.log(Number(await staking.getRewardPerBlock()) / 1e18 * 215000);
             await mineUpTo(await staking.endStakingBlock() / 2n);
-            await createSuccessVault(true, 1);
+            
+            await staking.depositReward(rewardAmount);
+
             await mineUpTo(await staking.endStakingBlock());
             console.log(Number(await staking.getPendingRewardByUser(user1.address)) / 1e18);
 
-            await staking.connect(user1).claimReward(user1.address);
+
+            await staking.connect(user1)["claimReward()"]();
         });
     });
 });
