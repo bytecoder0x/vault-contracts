@@ -260,9 +260,16 @@ contract VaultFactory is AccessControl, IVaultFactory {
         return allVaults;
     }
 
-
     function getVaultsCount() public view returns (uint256) {
         return allVaults.length;
+    }
+
+    function getDepositTokens() public view returns (address[] memory) {
+        return depositTokens;
+    }
+
+    function getDepositTokensCount() public view returns (uint256) {
+        return depositTokens.length;
     }
 
     function _isContract(address _address) private view returns (bool) {
