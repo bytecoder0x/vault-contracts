@@ -51,7 +51,7 @@ describe("GoilStaking", function () {
     });
 
     describe("Staking Functionality", function () {
-        it.only("Should set correct staking period", async function () {
+        it("Should set correct staking period", async function () {
             const stakeAmount = ethers.parseEther("100");
             const rewardAmount = ethers.parseEther("110");
 
@@ -60,12 +60,15 @@ describe("GoilStaking", function () {
             await staking.connect(user1).stakeTokens(stakeAmount);
 
             console.log(Number(await staking.getPendingRewardByUser(user1.address)) / 1e18);
-            await staking.depositReward(stakeAmount);
+
+            await goilToken.approve(staking.target, rewardAmount);
+            await staking.depositReward(rewardAmount);
 
             const totalReward = await staking.totalReward();
-            console.log(Number(await staking.getRewardPerBlock()) / 1e18 * 215000);
             await mineUpTo(await staking.endStakingBlock() / 2n);
-            
+            console.log(Number(await staking.getPendingRewardByUser(user1.address)) / 1e18);
+
+            await goilToken.approve(staking.target, rewardAmount);
             await staking.depositReward(rewardAmount);
 
             await mineUpTo(await staking.endStakingBlock());

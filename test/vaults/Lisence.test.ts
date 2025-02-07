@@ -14,6 +14,7 @@ describe("GoilLicense", function () {
     let qadrataReader: MockQuadata; 
     let treasury: Treasury;
     let admin: HardhatEthersSigner;
+
     let manager: HardhatEthersSigner;
     let applicant: HardhatEthersSigner;
     let otherAccount: HardhatEthersSigner;

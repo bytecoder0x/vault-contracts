@@ -12,7 +12,8 @@ import {IOracle} from "../interfaces/vaults/IOracle.sol";
 
 contract Treasury is AccessControl, ITreasury {
     using SafeERC20 for IERC20;
-    bytes32 MANAGER_ROLE = keccak256("MANAGER_ROLE");
+
+    bytes32 public constant TREASURY_MANAGER_ROLE = keccak256("TREASURY_MANAGER_ROLE");
 
     uint256 public constant MAX_COLLATERAL_PERCENTAGE = 100_00;
     uint256 public constant REQUIRED_COLLATERAL_PERCENTAGE = 10_00;
@@ -48,10 +49,9 @@ contract Treasury is AccessControl, ITreasury {
         _;
     }
 
-    modifier withLockedRefundableAmount(uint256 _amountToWithdraw) {
-        if (getGoilBalance() - _amountToWithdraw < totalRefundableAmount) revert InsufficientRefundableAmount();
+    modifier withLockedRefundableAmount() {
         _;
-
+        if (getGoilBalance() < totalRefundableAmount) revert InsufficientRefundableAmount();
     }
 
     modifier withSetupNecessaryContracts() {
@@ -77,7 +77,7 @@ contract Treasury is AccessControl, ITreasury {
         GOIL_TOKEN = IERC20(_goilToken);
 
         _grantRole(DEFAULT_ADMIN_ROLE, _admin);
-        _grantRole(MANAGER_ROLE, _admin);
+        _grantRole(TREASURY_MANAGER_ROLE, _admin);
     }
 
     function depositCollateral(
@@ -104,7 +104,7 @@ contract Treasury is AccessControl, ITreasury {
         emit CollateralDeposited(_entity, _requiredCollateral);
     }
 
-    function withdrawCollateral() external withSetupNecessaryContracts {
+    function withdrawCollateral() external withSetupNecessaryContracts withLockedRefundableAmount {
         address entity = msg.sender;
         uint256 collateralAmount;
 
@@ -116,6 +116,8 @@ contract Treasury is AccessControl, ITreasury {
             collateral[entity].collateralLocked = 0;
             collateral[entity].collateralUnlocked = 0;
         }
+
+        if (collateralAmount == 0) revert NoCollateralToWithdraw();
 
         GOIL_TOKEN.transfer(entity, collateralAmount);
         emit CollateralWithdrawn(entity, collateralAmount);
@@ -147,6 +149,8 @@ contract Treasury is AccessControl, ITreasury {
             collateral[entity].collateralLocked -= refundableAmount;
         }
 
+        totalRefundableAmount -= refundableAmount;
+
         GOIL_TOKEN.transfer(_vault, refundableAmount);
         emit VaultFunded(_vault, refundableAmount);
     }
@@ -158,7 +162,7 @@ contract Treasury is AccessControl, ITreasury {
         external
         onlyStaking
         withSetupNecessaryContracts
-        withLockedRefundableAmount(_amount)
+        withLockedRefundableAmount
     {
         if (_recipient == address(0)) revert RecipientCannotBeZeroAddress();
         if (_amount == 0) revert ZeroAmountToTransfer();
@@ -167,24 +171,22 @@ contract Treasury is AccessControl, ITreasury {
         emit StakingTokensTransferred(_recipient, _amount);
     }
 
-    function withdrawTokens(address _recipient, address _token, uint256 _amount) external onlyRole(MANAGER_ROLE) {
-        if (_token == address(GOIL_TOKEN) && getGoilBalance() - _amount < totalRefundableAmount) {
-            revert InsufficientRefundableAmount();
-        }
-
+    function withdrawTokens(
+        address _recipient,
+        address _token,
+        uint256 _amount
+    ) external withLockedRefundableAmount onlyRole(TREASURY_MANAGER_ROLE) {
         IERC20(_token).safeTransfer(_recipient, _amount);
     }
 
-    function withdrawAllTokens(address _token) external onlyRole(MANAGER_ROLE) {
-        if (_token == address(GOIL_TOKEN) && totalRefundableAmount > 0) {
-            revert InsufficientRefundableAmount();
-        }
-
+    function withdrawAllTokens(
+        address _token
+    ) external withLockedRefundableAmount onlyRole(TREASURY_MANAGER_ROLE) {
         uint256 balance = IERC20(_token).balanceOf(address(this));
         IERC20(_token).safeTransfer(msg.sender, balance);
     }
 
-    function setScoringContract(address _scoring) external onlyRole(MANAGER_ROLE) {
+    function setScoringContract(address _scoring) external onlyRole(DEFAULT_ADMIN_ROLE) {
         if (SCORING != address(0)) revert ScoringAlreadySet();
         if (!_isContract(_scoring)) revert ScoringMustBeContract();
 
@@ -192,7 +194,7 @@ contract Treasury is AccessControl, ITreasury {
         emit ScoringContractUpdated(_scoring);
     }
 
-    function setStakingContract(address _staking) external onlyRole(MANAGER_ROLE) {
+    function setStakingContract(address _staking) external onlyRole(DEFAULT_ADMIN_ROLE) {
         if (STAKING != address(0)) revert StakingAlreadySet();
         if (!_isContract(_staking)) revert StakingMustBeContract();
 
@@ -200,7 +202,7 @@ contract Treasury is AccessControl, ITreasury {
         emit StakingContractUpdated(_staking);
     }
 
-    function setLicenseContract(address _license) external onlyRole(MANAGER_ROLE) {
+    function setLicenseContract(address _license) external onlyRole(DEFAULT_ADMIN_ROLE) {
         if (address(LICENSE) != address(0)) revert LicenseAlreadySet();
         if (!_isContract(_license)) revert LicenseMustBeContract();
 

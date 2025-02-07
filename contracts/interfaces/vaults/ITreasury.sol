@@ -36,6 +36,7 @@ interface ITreasury {
     error RecipientCannotBeZeroAddress();
     error ZeroAmountToDeposit();
     error ZeroAmountToWithdraw();
+    error NoCollateralToWithdraw();
     error CannotWithdrawDuringActiveLicense();
     error InsufficientCollateral();
     error InsufficientRefundableAmount();

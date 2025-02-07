@@ -15,6 +15,8 @@ import {IStaking} from "../interfaces/vaults/IStaking.sol";
 contract VaultFactory is AccessControl, IVaultFactory {
     using Clones for address;
 
+    bytes32 public constant VAULT_MANAGER_ROLE = keccak256("VAULT_MANAGER_ROLE");
+
     uint256 public constant MAX_BIPS = 100_00;
     uint256 public constant COLLATERAL_PERCENTAGE = 10_00;
 
@@ -87,6 +89,7 @@ contract VaultFactory is AccessControl, IVaultFactory {
         VAULT_IMPLEMENTATION = address(new Vault());
 
         _grantRole(DEFAULT_ADMIN_ROLE, _admin);
+        _grantRole(VAULT_MANAGER_ROLE, _admin);
     }
 
     function createVault(
@@ -162,7 +165,7 @@ contract VaultFactory is AccessControl, IVaultFactory {
         emit VaultCreated(address(vault), msg.sender, newVault);
     }
 
-    function addDepositToken(address _depositToken) public onlyRole(DEFAULT_ADMIN_ROLE) {
+    function addDepositToken(address _depositToken) public onlyRole(VAULT_MANAGER_ROLE) {
         if (!_isContract(_depositToken)) revert DepositTokenMustBeContract();
         if (isDepositToken[_depositToken]) revert DepositTokenAlreadyExists();
 
@@ -171,7 +174,7 @@ contract VaultFactory is AccessControl, IVaultFactory {
         emit DepositTokenAdded(_depositToken);
     }
 
-    function removeDepositToken(address _depositToken) public onlyRole(DEFAULT_ADMIN_ROLE) {
+    function removeDepositToken(address _depositToken) public onlyRole(VAULT_MANAGER_ROLE) {
         uint256 totalDepositTokens = depositTokens.length;
         if (totalDepositTokens == 1) revert CannotRemoveLastDepositToken();
         if (!isDepositToken[_depositToken]) revert DepositTokenDoesNotExist();

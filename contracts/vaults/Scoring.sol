@@ -11,6 +11,7 @@ import {ILicense} from "../interfaces/vaults/ILicense.sol";
 
 contract Scoring is AccessControl, IScoring {
     bytes32 public constant MANAGER_ROLE = keccak256("MANAGER_ROLE");
+    bytes32 public constant SCORING_MANAGER_ROLE = keccak256("SCORING_MANAGER_ROLE");
 
     uint8 public constant MAX_HISTORY_SCORE_COUNT = 5;
 
@@ -80,7 +81,7 @@ contract Scoring is AccessControl, IScoring {
         marketConditionRatio = _marketConditionRatio;
 
         _grantRole(DEFAULT_ADMIN_ROLE, _admin);
-        _grantRole(MANAGER_ROLE, _admin);
+        _grantRole(SCORING_MANAGER_ROLE, _admin);
     }
 
     function updateEntityScore() public onlyVault {
@@ -133,13 +134,14 @@ contract Scoring is AccessControl, IScoring {
         uint256 weightedMarketConditionRatio = marketConditionRatio * MARKET_CONDITION_WEIGHT / SCORE_PRECISION;
 
         uint256 initialScore = weightedCollateralRatio + weightedReputationRatio + weightedFinancialHealthRatio + weightedMarketConditionRatio;
+
         scores[_entity].push(initialScore);
         penalties[_entity] = MAX_RATIO;
 
         emit EntityScoreUpdated(_entity, initialScore);
     }
     
-    function setPerformanceData(address _entity, uint256 _reputationRatio, uint256 _financialHealthRatio) external onlyRole(DEFAULT_ADMIN_ROLE) {
+    function setPerformanceData(address _entity, uint256 _reputationRatio, uint256 _financialHealthRatio) external onlyRole(SCORING_MANAGER_ROLE) {
         PerformanceData memory entityPerformanceData = performanceData[_entity];
 
         if (_entity == address(0)) revert EntityCannotBeZeroAddress();
@@ -157,7 +159,7 @@ contract Scoring is AccessControl, IScoring {
         emit PerformanceDataUpdated(_entity, _reputationRatio, _financialHealthRatio);
     }
 
-    function setThresholdCollateral(uint256 _thresholdCollateral) external onlyRole(MANAGER_ROLE) {
+    function setThresholdCollateral(uint256 _thresholdCollateral) external onlyRole(SCORING_MANAGER_ROLE) {
         if (_thresholdCollateral == 0) revert ThresholdCollateralCannotBeZero();
         if (thresholdCollateral == _thresholdCollateral) revert ThresholdCollateralCannotBeTheSame();
 
@@ -165,7 +167,7 @@ contract Scoring is AccessControl, IScoring {
         emit ThresholdCollateralUpdated(_thresholdCollateral);
     }
 
-    function setThresholdCapital(uint256 _thresholdCapital) external onlyRole(MANAGER_ROLE) {
+    function setThresholdCapital(uint256 _thresholdCapital) external onlyRole(SCORING_MANAGER_ROLE) {
         if (_thresholdCapital == 0) revert ThresholdCapitalCannotBeZero();
         if (thresholdCapital == _thresholdCapital) revert ThresholdCapitalCannotBeTheSame();
 
@@ -173,7 +175,7 @@ contract Scoring is AccessControl, IScoring {
         emit ThresholdCapitalUpdated(_thresholdCapital);
     }
 
-    function setMarketConditionRatio(uint256 _marketConditionRatio) external onlyRole(MANAGER_ROLE) {
+    function setMarketConditionRatio(uint256 _marketConditionRatio) external onlyRole(SCORING_MANAGER_ROLE) {
         if (_marketConditionRatio > MAX_RATIO || _marketConditionRatio == 0) revert InvalidMarketConditionRatio();
         if (marketConditionRatio == _marketConditionRatio) revert MarketConditionRatioCannotBeTheSame();
 

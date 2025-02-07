@@ -20,13 +20,14 @@ import { loadFixture, mineUpTo } from "@nomicfoundation/hardhat-network-helpers"
 import { time } from "@nomicfoundation/hardhat-network-helpers";
 import { deployAllContracts } from "./utils.test";
 
-describe("Main Flow", function () {
+describe.only("Main Flow", function () {
 	let admin: HardhatEthersSigner;
 	let entity: HardhatEthersSigner;
 	let user1: HardhatEthersSigner;
 	let user2: HardhatEthersSigner;
 	let user3: HardhatEthersSigner;
 	let user4: HardhatEthersSigner;
+
 	let goilToken: MockERC20;
 	let stableToken: MockERC20;
 	let mockFactory: MockFactory;
@@ -76,8 +77,8 @@ describe("Main Flow", function () {
         thresholdCapital = fixture.THRESHOLD_CAPITAL;
 	});
 
-	it.only("Checks all functionality from getting license to successful vault repayment", async function () {
-		const collateralAmount = ethers.parseEther("10000"); // this amount will be used for calculating initial score
+	it("Checks all functionality from getting license to successful vault repayment", async function () {
+		const collateralAmount = ethers.parseEther("100000"); // this amount will be used for calculating initial score
 		const totalFeeWithCollateral = collateralAmount + licenseMonthlyFee * 12n + applicationFee;
 		const licenseEndTime = (await time.latest()) + 12 * 31 * 24 * 60 * 60; // 12 months
 
@@ -273,7 +274,7 @@ describe("Main Flow", function () {
 	});
 
     it("Checks all functionality from getting license to vault liquidation", async function () {
-        const collateralAmount = ethers.parseEther("10000")
+        const collateralAmount = ethers.parseEther("100000")
 		const totalFeeWithCollateral = collateralAmount + licenseMonthlyFee * 12n + applicationFee;
 
 		const licenseEndTime = (await time.latest()) + 12 * 31 * 24 * 60 * 60; // 12 months
