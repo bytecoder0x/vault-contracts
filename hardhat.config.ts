@@ -2,7 +2,7 @@ import { HardhatUserConfig } from "hardhat/config";
 import "@nomicfoundation/hardhat-toolbox";
 import "dotenv/config";
 
-const { ARBITRUM_SEPOLIA_URL, ARBITRUM_SCANER_KEY, PRIVATE_KEY } = process.env;
+const { ARBITRUM_SEPOLIA_URL, ARBITRUM_SCANER_KEY, PRIVATE_KEY, ARBITRUM_URL } = process.env;
 
 const config: HardhatUserConfig = {
   solidity: {
@@ -21,10 +21,15 @@ const config: HardhatUserConfig = {
       chainId: 421614,
       accounts: [PRIVATE_KEY || ""]
     },
+    arbitrum: {
+      url: ARBITRUM_URL || "",
+      chainId: 42161,
+      accounts: [PRIVATE_KEY || ""]
+    },
   },
   etherscan: {
     apiKey: {
-      arbitrumSepolia: ARBITRUM_SCANER_KEY || ""
+      arbitrumOne: ARBITRUM_SCANER_KEY || ""
     }
   }
 };

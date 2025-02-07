@@ -40,7 +40,6 @@ interface IVault {
     function SCORING() external view returns (IScoring);
     function GOIL_TOKEN() external view returns (IERC20Upgradeable);
     function isVaultSuccess() external view returns (bool);
-    function goilRate() external view returns (uint256);
     function desiredCap() external view returns (uint256);
     function promisedCap() external view returns (uint256);
     function startTime() external view returns (uint256);

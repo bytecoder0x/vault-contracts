@@ -35,7 +35,6 @@ contract Vault is Initializable, ERC4626Upgradeable, OwnableUpgradeable, IVault 
     bool public isVaultSuccess;
     bool public isVaultLiquidated;
 
-    uint256 public goilRate;
     uint256 public desiredCap;
     uint256 public promisedCap;
     uint256 public startTime;
@@ -184,14 +183,13 @@ contract Vault is Initializable, ERC4626Upgradeable, OwnableUpgradeable, IVault 
         uint256 currentTime = block.timestamp;
 
         if (currentTime < startTime) return VaultState.NOT_STARTED;
-        if (currentTime > fundingEndTime && currentTime < unlockEndTime) return VaultState.FUNDING;
+        if (currentTime > startTime && currentTime < fundingEndTime) return VaultState.FUNDING;
         if (isNotRaisedDesiredCap()) return VaultState.NOT_RAISED;
         if (isLiquidatable()) return VaultState.LIQUIDATED;
         if (isVaultSuccess) return VaultState.SUCCESS;
 
         return VaultState.LOCKED;
     }
-
 
     function isLiquidatable() public view returns (bool) {
         uint256 currentTime = block.timestamp;
