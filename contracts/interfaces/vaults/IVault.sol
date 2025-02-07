@@ -33,6 +33,7 @@ interface IVault {
     error VaultIsNotUnlocked();
     error VaultIsUnlocked();
     error VaultIsNotFailed();
+    error VaultIsNotLiquidatable();
 
     event DepositFromEntity(uint256 amount);
     event WithdrawToEntity(uint256 amount);

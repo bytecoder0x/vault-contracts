@@ -91,36 +91,6 @@ contract Vault is Initializable, ERC4626Upgradeable, OwnableUpgradeable, IVault 
         return withdraw(_amountToWithdraw, msg.sender, msg.sender);
     }
 
-    function deposit(uint256 _amountToDeposit, address _receiverShares) public override returns (uint256) {
-        uint256 currentTime = block.timestamp;
-
-        if (currentTime < startTime) revert VaultNotStarted();
-        if (currentTime > fundingEndTime) revert VaultFundingTimeIsEnded();
-        if (totalAssets() + _amountToDeposit > desiredCap) revert ExceedsVaultSize();
-
-        return super.deposit(_amountToDeposit, _receiverShares);
-    }
-
-    function withdraw(uint256 _amountToWithdraw, address _receiver, address _holderShares) public override returns (uint256) {
-        uint256 currentTime = block.timestamp;
-        
-        if (isNotRaisedDesiredCap()) {
-            return super.withdraw(_amountToWithdraw, _receiver, _holderShares);
-        }
-
-        if (currentTime < unlockEndTime) revert VaultIsNotUnlocked();
-        
-        if (isLiquidatable()) {
-            isVaultLiquidated = true;
-            
-            _updateAsset(address(GOIL_TOKEN));
-
-            SCORING.updateEntityScore();
-        }
-
-        return super.withdraw(_amountToWithdraw, _receiver, _holderShares);
-    }
-
     function depositFromEntity() external onlyOwner {
         uint256 currentTime = block.timestamp;
 
@@ -174,6 +144,22 @@ contract Vault is Initializable, ERC4626Upgradeable, OwnableUpgradeable, IVault 
         emit WithdrawToEntity(totalAssets());
     }
 
+    function liquidate() external {
+        if (!isLiquidatable()) revert VaultIsNotLiquidatable();
+
+        _liquidate();
+    }
+
+    function withdraw(uint256 _assets, address _receiver, address _owner) public override returns (uint256) {
+        if (isLiquidatable()) _liquidate();
+        return super.withdraw(_assets, _receiver, _owner);
+    }
+
+    function redeem(uint256 _shares, address _receiver, address _owner) public override returns (uint256) {
+        if (isLiquidatable()) _liquidate();
+        return super.redeem(_shares, _receiver, _owner);
+    }
+
     function getAmountForStaking() public view returns (uint256) {
         uint256 profit = promisedCap - desiredCap;
         return (profit * stakingPercentage) / MAX_BIPS;
@@ -212,6 +198,39 @@ contract Vault is Initializable, ERC4626Upgradeable, OwnableUpgradeable, IVault 
         return super.owner();
     }
 
+    function _deposit(
+        address _caller,
+        address _receiver,
+        uint256 _assets,
+        uint256 _shares
+    ) internal virtual override {
+        uint256 currentTime = block.timestamp;
+
+        if (currentTime < startTime) revert VaultNotStarted();
+        if (currentTime > fundingEndTime) revert VaultFundingTimeIsEnded();
+        if (totalAssets() + _assets > desiredCap) revert ExceedsVaultSize();
+
+        super._deposit(_caller, _receiver, _assets, _shares);
+    }
+
+    function _withdraw(
+        address _caller,
+        address _receiver,
+        address _owner,
+        uint256 _assets,
+        uint256 _shares
+    ) internal virtual override {
+        uint256 currentTime = block.timestamp;
+
+        if (isNotRaisedDesiredCap()) {
+            return super._withdraw(_caller, _receiver, _owner, _assets, _shares);
+        }
+        
+        if (currentTime < unlockEndTime) revert VaultIsNotUnlocked();
+
+        super._withdraw(_caller, _receiver, _owner, _assets, _shares);
+    }
+
     function _updateAsset(address _newAsset) private {
         //! _tryGetAssetDecimals, _asset and _underlyingDecimals in ERC4626Upgradeable must be internal for this case
         (bool success, uint8 assetDecimals) = _tryGetAssetDecimals(IERC20Upgradeable(_newAsset));
@@ -219,8 +238,17 @@ contract Vault is Initializable, ERC4626Upgradeable, OwnableUpgradeable, IVault 
         _asset = IERC20Upgradeable(_newAsset);
     }
 
+    function _liquidate() private {
+        isVaultLiquidated = true;
+
+        _updateAsset(address(GOIL_TOKEN));
+
+        SCORING.updateEntityScore();
+    }
+
     function _swap(uint256 _amountIn, address _recipient) private returns (uint256 amountOut) {
         address tokenOut = address(GOIL_TOKEN);
+
         address tokenIn = address(asset());
         (Swap decision, uint24 fee, uint256 maxAmount) = _decider(_amountIn, tokenIn, tokenOut);
 
