@@ -7,30 +7,30 @@ import { time } from "@nomicfoundation/hardhat-network-helpers";
 import { deployAllContracts } from "../utils.test";
 import { APPLICATION_FEE, LICENSE_MONTHLY_FEE } from "../constants";
 
-describe("GoilLicense", function () {
+describe.only("GoilLicense", function () {
     let license: License;
     let scoring: Scoring;
     let goilToken: MockERC20;
     let qadrataReader: MockQuadata; 
     let treasury: Treasury;
     let admin: HardhatEthersSigner;
-
     let manager: HardhatEthersSigner;
     let applicant: HardhatEthersSigner;
     let otherAccount: HardhatEthersSigner;
     let applicationFee: bigint;
     let licenseMonthlyFee: bigint;
     let totalFeeWithCollateral: bigint;
+    let oneMonthInSeconds: bigint;
 
     const COLLATERAL_AMOUNT = ethers.parseEther("10000");
     const VOTING_PERIOD = 7 * 24 * 3600;
-    const LICENSE_EXPIRATION_LIMIT = 365 * 24 * 3600;
+    const ONE_MONTH_IN_SECONDS = 2628000n;
 
-    const submitLicense = async(licenseEndTime: bigint) =>{
+    const submitLicense = async(months: number) =>{
         await qadrataReader.connect(applicant).mint(applicant.address, 1n);
         await goilToken.connect(applicant).mint(applicant.address, totalFeeWithCollateral);
         await goilToken.connect(applicant).approve(license.target, totalFeeWithCollateral);
-        await license.connect(applicant).submitLicense(licenseEndTime, COLLATERAL_AMOUNT);
+        await license.connect(applicant).submitLicense(months, COLLATERAL_AMOUNT);
     }
 
     beforeEach(async () => {
@@ -75,7 +75,7 @@ describe("GoilLicense", function () {
         });
 
         it("Should set correct license expiration limit", async function () {
-            expect(await license.licenseExpirationLimit()).to.equal(365 * 24 * 3600);
+            expect(await license.licenseExpirationLimit()).to.equal(12n * ONE_MONTH_IN_SECONDS);
         });
 
         it("Should revert when admin address is zero", async function () {
@@ -184,9 +184,9 @@ describe("GoilLicense", function () {
             await goilToken.connect(applicant).approve(license.target, totalFeeWithCollateral);
 
             const licenseStartTime = BigInt(await time.latest()) + BigInt(VOTING_PERIOD) + 1n;
-            const licenseEndTime = licenseStartTime + (365n * 24n * 3600n);
+            const licenseEndTime = licenseStartTime + (12n * ONE_MONTH_IN_SECONDS);
             
-            await expect(license.connect(applicant).submitLicense(licenseEndTime, COLLATERAL_AMOUNT))
+            await expect(license.connect(applicant).submitLicense(12, COLLATERAL_AMOUNT))
                 .to.emit(license, "SubmittedLicense")
                 .withArgs(applicant.address, licenseStartTime, licenseEndTime, licenseMonthlyFee * 12n, COLLATERAL_AMOUNT);
 
@@ -203,8 +203,7 @@ describe("GoilLicense", function () {
         });
 
         it("Should successfully submit a license if previous license is rejected", async function () {
-            const licenseEndTime = BigInt(await time.latest()) + (365n * 24n * 3600n) + BigInt(VOTING_PERIOD); 
-            await submitLicense(licenseEndTime);
+            await submitLicense(12);
             expect(await goilToken.balanceOf(license.target)).to.equal(totalFeeWithCollateral - applicationFee);
             
             const balanceBeforeRefund = await goilToken.balanceOf(applicant.address);
@@ -216,14 +215,14 @@ describe("GoilLicense", function () {
             expect(await goilToken.balanceOf(license.target)).to.equal(0);
             expect(await goilToken.balanceOf(applicant.address)).to.equal(balanceBeforeRefund + totalFeeWithCollateral - applicationFee);
 
-            const newLicenseEndTime = BigInt(await time.latest()) + (365n * 24n * 3600n) + BigInt(VOTING_PERIOD);
-
             await goilToken.connect(applicant).mint(applicant.address, applicationFee);
             await goilToken.connect(applicant).approve(license.target, totalFeeWithCollateral);
-            await license.connect(applicant).submitLicense(newLicenseEndTime, COLLATERAL_AMOUNT);
+            await license.connect(applicant).submitLicense(12, COLLATERAL_AMOUNT);
 
             const licenseInfo = await license.licenses(applicant.address);
-            expect(licenseInfo.endTime).to.equal(newLicenseEndTime);
+            const licenseEndTime = licenseInfo.startTime + (12n * ONE_MONTH_IN_SECONDS);
+
+            expect(licenseInfo.endTime).to.equal(licenseEndTime);
             expect(licenseInfo.approved).to.equal(false);
             expect(licenseInfo.confirmedByAdmin).to.equal(false);
             expect(await goilToken.balanceOf(treasury.target)).to.equal(applicationFee * 2n);
@@ -231,8 +230,7 @@ describe("GoilLicense", function () {
         });
 
         it("Should successfully submit a license if previous license is expired", async function () {
-            const licenseEndTime = BigInt(await time.latest()) + (365n * 24n * 3600n) + BigInt(VOTING_PERIOD); 
-            await submitLicense(licenseEndTime);
+            await submitLicense(12);
 
             await time.increase(10 * 24 * 3600); // 10 days
             await license.approveLicense(applicant.address, true);
@@ -241,19 +239,19 @@ describe("GoilLicense", function () {
             expect(await license.getLicenseIsActive(applicant.address)).to.equal(false); 
             expect(await license.getLicenseStatus(applicant.address)).to.equal(4); // EXPIRED
 
-            const newLicenseEndTime = BigInt(await time.latest()) + (365n * 24n * 3600n) + BigInt(VOTING_PERIOD) + 1n;
-            await submitLicense(newLicenseEndTime);
+            await submitLicense(12);
 
             const licenseInfo = await license.licenses(applicant.address);
-            expect(licenseInfo.endTime).to.equal(newLicenseEndTime);
+            const newlicenseEndTime = licenseInfo.startTime + (12n * ONE_MONTH_IN_SECONDS);
+
+            expect(licenseInfo.endTime).to.equal(newlicenseEndTime);
             expect(licenseInfo.approved).to.equal(false);
             expect(licenseInfo.confirmedByAdmin).to.equal(false);
             expect(await goilToken.balanceOf(treasury.target)).to.equal(licenseMonthlyFee * 12n + applicationFee * 2n + COLLATERAL_AMOUNT);
         });
 
         it("Should successfully submit a license if previous active", async function () {
-            const licenseEndTime = BigInt(await time.latest()) + (365n * 24n * 3600n) + BigInt(VOTING_PERIOD); 
-            await submitLicense(licenseEndTime);
+            await submitLicense(12);
 
             await time.increase(10 * 24 * 3600); // 10 days
             await license.approveLicense(applicant.address, true);
@@ -261,14 +259,38 @@ describe("GoilLicense", function () {
             expect(await license.getLicenseIsActive(applicant.address)).to.equal(true); 
             expect(await license.getLicenseStatus(applicant.address)).to.equal(3); // ACTIVE
             
-            const newLicenseEndTime = licenseEndTime + (365n * 24n * 3600n) + BigInt(VOTING_PERIOD);
-            await submitLicense(newLicenseEndTime);
+            const previousLicenseEndTime = (await license.licenses(applicant.address)).endTime;
+            await submitLicense(12);
 
             const licenseInfo = await license.licenses(applicant.address);
-            expect(licenseInfo.endTime).to.equal(newLicenseEndTime);
+            const licenseEndTime = licenseInfo.startTime + (12n * ONE_MONTH_IN_SECONDS);
+
+            expect(licenseInfo.startTime - BigInt(VOTING_PERIOD)).to.equal(previousLicenseEndTime);
+            expect(licenseInfo.endTime).to.equal(licenseEndTime);
             expect(licenseInfo.approved).to.equal(false);
             expect(licenseInfo.confirmedByAdmin).to.equal(false);
             expect(await goilToken.balanceOf(treasury.target)).to.equal(licenseMonthlyFee * 12n + applicationFee * 2n + COLLATERAL_AMOUNT);
+        });
+
+        it("Should successfully submit on different months", async function () {
+            await submitLicense(5);
+            await license.approveLicense(applicant.address, true);
+
+            expect(await license.getLicenseIsActive(applicant.address)).to.equal(true); 
+            expect(await license.getLicenseStatus(applicant.address)).to.equal(3); // ACTIVE
+            
+            const previousLicenseEndTime = (await license.licenses(applicant.address)).endTime;
+            await submitLicense(7);
+
+            const licenseInfo = await license.licenses(applicant.address);
+            const licenseEndTime = licenseInfo.startTime + (7n * ONE_MONTH_IN_SECONDS);
+
+            expect(licenseInfo.startTime - BigInt(VOTING_PERIOD)).to.equal(previousLicenseEndTime);
+            expect(licenseInfo.endTime).to.equal(licenseEndTime);
+            expect(licenseInfo.approved).to.equal(false);
+            expect(licenseInfo.confirmedByAdmin).to.equal(false);
+            expect(await goilToken.balanceOf(license.target)).to.equal(licenseMonthlyFee * 7n + COLLATERAL_AMOUNT);
+            expect(await goilToken.balanceOf(treasury.target)).to.equal(licenseMonthlyFee * 5n + applicationFee * 2n + COLLATERAL_AMOUNT);
         });
 
         it("Should revert if applicant doesn't have the required KYB", async function () {
@@ -276,39 +298,29 @@ describe("GoilLicense", function () {
             await goilToken.connect(applicant).mint(applicant.address, ethers.parseEther("1000"));
             await goilToken.connect(applicant).approve(license.target, applicationFee + licenseMonthlyFee);
 
-            const licenseEndTime = BigInt(await time.latest()) + (365n * 24n * 3600n) + BigInt(VOTING_PERIOD); // 1 year
-
             await expect(
-                license.connect(applicant).submitLicense(licenseEndTime, COLLATERAL_AMOUNT)
+                license.connect(applicant).submitLicense(12, COLLATERAL_AMOUNT)
             ).to.be.revertedWithCustomError(license, "ApplicantMustHaveQadrataKYB");
         });
 
         it("Should revert if license period is too short", async function () {
-            const licenseEndTime = BigInt(await time.latest()) + (15n * 24n * 3600n) + BigInt(VOTING_PERIOD); // 15 days
-
-            await expect(submitLicense(licenseEndTime)).to.be.revertedWithCustomError(license, "LicensePeriodTooShort");
+            await expect(submitLicense(0)).to.be.revertedWithCustomError(license, "LicensePeriodTooShort");
         });
 
         it("Should revert if license period is too long", async function () {
-            const licenseEndTime = BigInt(await time.latest()) + (400n * 24n * 3600n) + BigInt(VOTING_PERIOD); // 400 days
-
-            await expect(submitLicense(licenseEndTime)).to.be.revertedWithCustomError(license, "LicensePeriodTooLong");
+            await expect(submitLicense(13)).to.be.revertedWithCustomError(license, "LicensePeriodTooLong");
         });
 
         it("Should revert if license is already submitted", async function () {
-            const licenseEndTime = BigInt(await time.latest()) + (365n * 24n * 3600n) + BigInt(VOTING_PERIOD); // 1 year
-            await submitLicense(licenseEndTime)
-
-            await expect(submitLicense(licenseEndTime)).to.be.revertedWithCustomError(license, "LicenseAlreadySubmitted");
+            await submitLicense(12);
+            await expect(submitLicense(12)).to.be.revertedWithCustomError(license, "LicenseAlreadySubmitted");
         });
     });
 
     describe("Approval Functionality", function () {
         it("Should successfully approve a license and set initial score", async function () {
-            const licenseEndTime = BigInt(await time.latest()) + (365n * 24n * 3600n) + BigInt(VOTING_PERIOD); // 1 year 
-            await submitLicense(licenseEndTime);
+            await submitLicense(12);
             
-
             await scoring.connect(admin).setPerformanceData(applicant.address, 50_000, 50_000);
             await expect(license.approveLicense(applicant.address, true))
                 .to.emit(license, "LicenseApproved")
@@ -326,8 +338,7 @@ describe("GoilLicense", function () {
         });
 
         it("Should successfully approve new license if previous license is expired", async function () {
-            const licenseEndTime = BigInt(await time.latest()) + (365n * 24n * 3600n) + BigInt(VOTING_PERIOD);
-            await submitLicense(licenseEndTime);
+            await submitLicense(12);
 
             await license.approveLicense(applicant.address, true);
             await scoring.connect(admin).setPerformanceData(applicant.address, 50_000, 50_000);
@@ -339,8 +350,7 @@ describe("GoilLicense", function () {
             await time.increase((365n * 24n * 3600n) + BigInt(VOTING_PERIOD)); // 1 year
             expect(await license.getLicenseStatus(applicant.address)).to.equal(4); // EXPIRED
 
-            const newLicenseEndTime = BigInt(await time.latest()) + (365n * 24n * 3600n) + BigInt(VOTING_PERIOD);
-            await submitLicense(newLicenseEndTime);
+            await submitLicense(12);
             await license.approveLicense(applicant.address, true);
 
             expect(await license.getLicenseStatus(applicant.address)).to.equal(3); // ACTIVE
@@ -349,8 +359,7 @@ describe("GoilLicense", function () {
         })
 
         it("Should revert if license is not in PENDING state", async function () {
-            const licenseEndTime = BigInt(await time.latest()) + (365n * 24n * 3600n) + BigInt(VOTING_PERIOD);
-            await submitLicense(licenseEndTime)
+            await submitLicense(12)
 
             await goilToken.connect(otherAccount).mint(otherAccount.address, ethers.parseEther("1000"));
             await license.approveLicense(applicant.address, true);
@@ -361,9 +370,7 @@ describe("GoilLicense", function () {
         });
 
         it("Should revert if not license manager tries to approve license", async function () {
-            const licenseEndTime = BigInt(await time.latest()) + (365n * 24n * 3600n) + BigInt(VOTING_PERIOD);
-
-            await submitLicense(licenseEndTime);
+            await submitLicense(12);
             await expect(
                 license.connect(otherAccount).approveLicense(applicant.address, true)
             ).to.be.revertedWithCustomError(license, "AccessControlUnauthorizedAccount")
@@ -405,15 +412,13 @@ describe("GoilLicense", function () {
         });
 
         it("Should allow manager to change exipation limit for license", async function () {
-            const newExpirationLimit = 500 * 24 * 3600; // 500 days
-
             await expect(
-                license.connect(manager).setLicenseExpirationLimit(newExpirationLimit)
+                license.connect(manager).setLicenseExpirationLimit(13)
             )
                 .to.emit(license, "LicenseExpirationLimitUpdated")
-                .withArgs(newExpirationLimit);
+                .withArgs(13n * ONE_MONTH_IN_SECONDS);
 
-            expect(await license.licenseExpirationLimit()).to.equal(newExpirationLimit);
+            expect(await license.licenseExpirationLimit()).to.equal(13n * ONE_MONTH_IN_SECONDS);
         });
 
         it("Should revert set fee if its the same", async function () {
@@ -443,10 +448,8 @@ describe("GoilLicense", function () {
         });
 
         it("Should revert set expiration limit for license if its the same or zero", async function () {
-            const currentLicenseExpirationLimit = await license.licenseExpirationLimit();
-
             await expect(
-                license.connect(manager).setLicenseExpirationLimit(currentLicenseExpirationLimit)
+                license.connect(manager).setLicenseExpirationLimit(12)
             ).to.be.revertedWithCustomError(license, "LicenseExpirationLimitCannotBeTheSame");
 
             await expect(
@@ -468,22 +471,22 @@ describe("GoilLicense", function () {
             await expect(
                 license.connect(otherAccount).setApplicationFee(ethers.parseEther("200"))
             ).to.be.revertedWithCustomError(license, "AccessControlUnauthorizedAccount")
-                .withArgs(otherAccount.address, ethers.keccak256(ethers.toUtf8Bytes("MANAGER_ROLE")));
+                .withArgs(otherAccount.address, ethers.keccak256(ethers.toUtf8Bytes("LICENSE_MANAGER_ROLE")));
 
             await expect(
                 license.connect(otherAccount).setLicenseMonthlyFee(ethers.parseEther("60"))
             ).to.be.revertedWithCustomError(license, "AccessControlUnauthorizedAccount")
-                .withArgs(otherAccount.address, ethers.keccak256(ethers.toUtf8Bytes("MANAGER_ROLE")));
+                .withArgs(otherAccount.address, ethers.keccak256(ethers.toUtf8Bytes("LICENSE_MANAGER_ROLE")));
             
             await expect(
                 license.connect(otherAccount).setVotingPeriod(10 * 24 * 3600)
             ).revertedWithCustomError(license, "AccessControlUnauthorizedAccount")
-                .withArgs(otherAccount.address, ethers.keccak256(ethers.toUtf8Bytes("MANAGER_ROLE")));
+                .withArgs(otherAccount.address, ethers.keccak256(ethers.toUtf8Bytes("LICENSE_MANAGER_ROLE")));
 
             await expect(
                 license.connect(otherAccount).setLicenseExpirationLimit(500 * 24 * 3600)
             ).revertedWithCustomError(license, "AccessControlUnauthorizedAccount")
-                .withArgs(otherAccount.address, ethers.keccak256(ethers.toUtf8Bytes("MANAGER_ROLE")));
+                .withArgs(otherAccount.address, ethers.keccak256(ethers.toUtf8Bytes("LICENSE_MANAGER_ROLE")));
 
             const adminRole = await license.DEFAULT_ADMIN_ROLE();
             await expect(
@@ -496,11 +499,9 @@ describe("GoilLicense", function () {
 
     describe("License Information Retrieval Functionality", function () {
         it("Should return the correct license status", async function () {
-            const licenseEndTime = BigInt(await time.latest()) + (365n * 24n * 3600n) + BigInt(VOTING_PERIOD);
-
             expect(await license.getLicenseStatus(applicant.address)).to.equal(0); // UNINITIALIZED
 
-            await submitLicense(licenseEndTime);
+            await submitLicense(12);
             expect(await license.getLicenseStatus(applicant.address)).to.equal(1); // PENDING
             expect(await license.getLicenseIsPending(applicant.address)).to.equal(true);
 
@@ -515,11 +516,12 @@ describe("GoilLicense", function () {
         });
 
         it("Should return the correct license details by address", async function () {
-            const licenseEndTime = BigInt(await time.latest()) + (365n * 24n * 3600n) + BigInt(VOTING_PERIOD);
-            await submitLicense(licenseEndTime)
+            await submitLicense(12);
 
             const [status, startTime, endTime, approved, confirmedByAdmin] = await license.getLicenseByEntity(applicant.address);
             
+            const licenseEndTime = startTime + (12n * ONE_MONTH_IN_SECONDS);
+
             expect(status).to.equal(1); // PENDING
             expect(startTime).to.equal(BigInt(await time.latest()) + 7n * 24n * 3600n);
             expect(endTime).to.equal(licenseEndTime);

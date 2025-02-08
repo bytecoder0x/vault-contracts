@@ -20,7 +20,7 @@ import { loadFixture, mineUpTo } from "@nomicfoundation/hardhat-network-helpers"
 import { time } from "@nomicfoundation/hardhat-network-helpers";
 import { deployAllContracts } from "./utils.test";
 
-describe.only("Main Flow", function () {
+describe("Main Flow", function () {
 	let admin: HardhatEthersSigner;
 	let entity: HardhatEthersSigner;
 	let user1: HardhatEthersSigner;
@@ -80,7 +80,7 @@ describe.only("Main Flow", function () {
 	it("Checks all functionality from getting license to successful vault repayment", async function () {
 		const collateralAmount = ethers.parseEther("100000"); // this amount will be used for calculating initial score
 		const totalFeeWithCollateral = collateralAmount + licenseMonthlyFee * 12n + applicationFee;
-		const licenseEndTime = (await time.latest()) + 12 * 31 * 24 * 60 * 60; // 12 months
+		const licenseEndTime = 12; // 12 months
 
 		const tokensForTreasury = ethers.parseEther("10000000");
 
@@ -266,7 +266,7 @@ describe.only("Main Flow", function () {
 		await goilToken.mint(user1.address, amountToStake);
 		await goilToken.connect(user1).approve(staking.target, amountToStake);
 		await staking.connect(user1).stakeTokens(amountToStake);
-		console.log(Number(await staking.getCurrentAPY()) / 100);
+
 		await mineUpTo(await staking.endStakingBlock());
 		
 		const user1Reward = await staking.getPendingRewardByUser(user1.address);
@@ -277,7 +277,7 @@ describe.only("Main Flow", function () {
         const collateralAmount = ethers.parseEther("100000")
 		const totalFeeWithCollateral = collateralAmount + licenseMonthlyFee * 12n + applicationFee;
 
-		const licenseEndTime = (await time.latest()) + 12 * 31 * 24 * 60 * 60; // 12 months
+		const licenseEndTime = 12; // 12 months
 		const tokensForTreasury = ethers.parseEther("10000000");
 
 		await goilToken.mint(entity.address, totalFeeWithCollateral);
