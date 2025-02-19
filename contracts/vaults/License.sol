@@ -25,7 +25,7 @@ contract License is AccessControl, ILicense {
     uint256 public applicationFee;
     uint256 public licenseMonthlyFee;
 
-    LicenseInfo[] public allPendingLicenses;
+    LicenseInfo[] public pendingLicenses;
 
     mapping(address => LicenseInfo) public licenses;
     mapping(address => LicenseFeeAndCollateral) public licenseFeeAndCollateralPaid;
@@ -88,7 +88,7 @@ contract License is AccessControl, ILicense {
         licenses[msg.sender].approved = false;
         licenses[msg.sender].confirmedByAdmin = false;
 
-        allPendingLicenses.push(LicenseInfo({
+        pendingLicenses.push(LicenseInfo({
             entity: msg.sender,
             startTime: licenseStartTime,
             endTime: licenseEndTime,
@@ -99,46 +99,42 @@ contract License is AccessControl, ILicense {
         emit SubmittedLicense(msg.sender, licenseStartTime, licenseEndTime, licenseFee, _collateralAmount);
     }
 
-    function approveLicense(address _entity, bool _approved) external onlyRole(LICENSE_MANAGER_ROLE) {
+    function approveLicense(address _entity, bool _approved) public onlyRole(LICENSE_MANAGER_ROLE) {
         if (!getLicenseIsPending(_entity)) revert LicenseIsNotPending();
 
-        LicenseFeeAndCollateral memory licenseFeeAndCollateral = licenseFeeAndCollateralPaid[_entity];
+        uint256 licenseFee = licenseFeeAndCollateralPaid[_entity].licenseFee;
+        uint256 collateral = licenseFeeAndCollateralPaid[_entity].collateral;
 
         if (_approved) {
-            GOIL_TOKEN.transfer(address(TREASURY), licenseFeeAndCollateral.licenseFee);
-            GOIL_TOKEN.approve(address(TREASURY), licenseFeeAndCollateral.collateral);
-            TREASURY.depositCollateral(_entity, licenseFeeAndCollateral.collateral);
+            GOIL_TOKEN.transfer(address(TREASURY), licenseFee);
+            GOIL_TOKEN.approve(address(TREASURY), collateral);
+            TREASURY.depositCollateral(_entity, collateral);
 
             licenseFeeAndCollateralPaid[_entity].collateral = 0;
             licenseFeeAndCollateralPaid[_entity].licenseFee = 0;
 
             licenses[_entity].approved = true;
 
-            if (SCORING.getIsReadyToSetInitialScore(_entity)) SCORING.setInitialScore(_entity);
+            if (SCORING.isReadyToSetInitialScore(_entity)) SCORING.setInitialScore(_entity);
         } else {
-            GOIL_TOKEN.transfer(_entity, licenseFeeAndCollateral.licenseFee + licenseFeeAndCollateral.collateral);
+            GOIL_TOKEN.transfer(_entity, licenseFee + collateral);
         }
 
         licenses[_entity].confirmedByAdmin = true;
-
-        uint256 totalPendingLicenses = allPendingLicenses.length; // for gas optimization
-        for (uint256 i = 0; i < totalPendingLicenses; i++) {
-            if (allPendingLicenses[i].entity == _entity) {
-                allPendingLicenses[i] = allPendingLicenses[totalPendingLicenses - 1];
-                allPendingLicenses.pop();
-                break;
-            }
-        }
+        _removePendingLicense(_entity);
 
         emit LicenseApproved(_entity, _approved);
     }
 
-    function setScoringContract(address _scoringContract) external onlyRole(DEFAULT_ADMIN_ROLE) {
-        if (!_isContract(_scoringContract)) revert ScoringContractMustBeContract();
-        if (address(SCORING) != address(0)) revert ScoringContractAlreadySet();
+    function approveLicenseBatch(
+        address[] calldata _entities,
+        bool[] calldata _approved
+    ) public onlyRole(LICENSE_MANAGER_ROLE) {
+        if (_entities.length != _approved.length) revert EntitiesAndApprovedLengthsMustBeTheSame();
 
-        SCORING = IScoring(_scoringContract);
-        emit ScoringContractUpdated(_scoringContract);
+        for (uint256 i = 0; i < _entities.length; i++) {
+            approveLicense(_entities[i], _approved[i]);
+        }
     }
 
     function setApplicationFee(uint256 _applicationFee) external onlyRole(LICENSE_MANAGER_ROLE) {
@@ -161,6 +157,14 @@ contract License is AccessControl, ILicense {
 
         votingPeriod = _votingPeriod;
         emit VotingPeriodUpdated(_votingPeriod);
+    }
+
+    function setScoringContract(address _scoringContract) external onlyRole(DEFAULT_ADMIN_ROLE) {
+        if (!_isContract(_scoringContract)) revert ScoringContractMustBeContract();
+        if (address(SCORING) != address(0)) revert ScoringContractAlreadySet();
+
+        SCORING = IScoring(_scoringContract);
+        emit ScoringContractUpdated(_scoringContract);
     }
 
     function setLicenseExpirationLimit(uint256 _months) external onlyRole(LICENSE_MANAGER_ROLE) {
@@ -209,11 +213,22 @@ contract License is AccessControl, ILicense {
     }
 
     function getAllPendingLicenses() public view returns (LicenseInfo[] memory) {
-        return allPendingLicenses;
+        return pendingLicenses;
     }
 
     function getCountsPendingLicenses() public view returns (uint256) {
-        return allPendingLicenses.length;
+        return pendingLicenses.length;
+    }
+
+    function _removePendingLicense(address _entity) private {
+        uint256 totalPendingLicenses = pendingLicenses.length;
+        for (uint256 i = 0; i < totalPendingLicenses; i++) {
+            if (pendingLicenses[i].entity == _entity) {
+                pendingLicenses[i] = pendingLicenses[totalPendingLicenses - 1];
+                pendingLicenses.pop();
+                break;
+            }
+        }
     }
 
     function _isContract(address _address) private view returns (bool) {

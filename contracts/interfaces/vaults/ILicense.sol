@@ -46,6 +46,7 @@ interface ILicense {
     error LicensePeriodTooLong();
     error ApplicantMustHaveQadrataKYB();
     error LicenseAlreadySubmitted();
+    error EntitiesAndApprovedLengthsMustBeTheSame();
     error FeeCannotBeTheSame();
     error VotingPeriodCannotBeTheSame();
     error VotingPeriodCannotBeZero();
@@ -53,6 +54,8 @@ interface ILicense {
     error LicenseExpirationLimitCannotBeZero();
 
     function submitLicense(uint256 _licenseEndTime, uint256 _collateralAmount) external;
+    function approveLicense(address _entity, bool _approved) external;
+    function approveLicenseBatch(address[] calldata _entities, bool[] calldata _approved) external;
     function setApplicationFee(uint256 _applicationFee) external;
     function setLicenseMonthlyFee(uint256 _licenseMonthlyFee) external;
     function setVotingPeriod(uint256 _votingPeriod) external;

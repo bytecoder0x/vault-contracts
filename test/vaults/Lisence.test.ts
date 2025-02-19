@@ -7,7 +7,7 @@ import { time } from "@nomicfoundation/hardhat-network-helpers";
 import { deployAllContracts } from "../utils.test";
 import { APPLICATION_FEE, LICENSE_MONTHLY_FEE } from "../constants";
 
-describe.only("GoilLicense", function () {
+describe("GoilLicense", function () {
     let license: License;
     let scoring: Scoring;
     let goilToken: MockERC20;
