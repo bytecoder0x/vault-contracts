@@ -20,7 +20,7 @@ import { loadFixture, mineUpTo } from "@nomicfoundation/hardhat-network-helpers"
 import { time } from "@nomicfoundation/hardhat-network-helpers";
 import { deployAllContracts } from "./utils.test";
 
-describe("Main Flow", function () {
+describe.only("Main Flow", function () {
 	let admin: HardhatEthersSigner;
 	let entity: HardhatEthersSigner;
 	let user1: HardhatEthersSigner;

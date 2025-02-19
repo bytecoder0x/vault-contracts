@@ -6,6 +6,7 @@ import {Clones} from "@openzeppelin/contracts/proxy/Clones.sol";
 import {Vault} from "./Vault.sol";
 
 import {IVaultFactory} from "../interfaces/vaults/IVaultFactory.sol";
+import {IVault} from "../interfaces/vaults/IVault.sol";
 import {ITreasury} from "../interfaces/vaults/ITreasury.sol";
 import {ILicense} from "../interfaces/vaults/ILicense.sol";
 import {IScoring} from "../interfaces/vaults/IScoring.sol";
@@ -122,25 +123,30 @@ contract VaultFactory is AccessControl, IVaultFactory {
         uint256 refundableAmount = ORACLE.getPaymentAmountForTokens(_desiredCap);
         uint256 requiredCollateral = TREASURY.getRequiredCollateral(_desiredCap);
 
+        IVault.VaultParams memory vaultParams = IVault.VaultParams({
+            entity: msg.sender,
+            scoring: address(SCORING),
+            treasury: address(TREASURY),
+            staking: address(STAKING),
+            goilToken: GOIL_TOKEN,
+            depositToken: _depositToken,
+            desiredCap: _desiredCap,
+            promisedCap: promisedCap,
+            startTime: _startTime,
+            fundingEndTime: fundingEndTime,
+            unlockEndTime: unlockEndTime,
+            refundableAmountInGoil: refundableAmount,
+            amountForStaking: (promisedCap - _desiredCap) * stakingPercentage / MAX_BIPS
+        });
+
+        IVault.DexParams memory dexParams = IVault.DexParams({
+            routerV2: ROUTER_V2,
+            routerV3: ROUTER_V3,
+            quoter: QUOTER
+        });
+
         Vault vault = Vault(VAULT_IMPLEMENTATION.clone());
-        vault.initialize(
-            msg.sender,
-            address(SCORING),
-            address(TREASURY),
-            address(STAKING),
-            GOIL_TOKEN,
-            _depositToken,
-            ROUTER_V2,
-            ROUTER_V3,
-            QUOTER,
-            _desiredCap,
-            promisedCap,
-            _startTime,
-            fundingEndTime,
-            unlockEndTime,
-            refundableAmount,
-            stakingPercentage
-        );
+        vault.initialize(vaultParams, dexParams);
 
         VaultInfo memory newVault = VaultInfo({
             vault: address(vault),
@@ -191,6 +197,14 @@ contract VaultFactory is AccessControl, IVaultFactory {
         emit DepositTokenRemoved(_depositToken);
     }
 
+    function setStakingPercentage(uint256 _stakingPercentage) public onlyRole(VAULT_MANAGER_ROLE) {
+        if (_stakingPercentage > MAX_BIPS) revert StakingPercentageCannotBeGreaterThanMaxBips();
+        if (_stakingPercentage == 0) revert StakingPercentageCannotBeZero();
+
+        stakingPercentage = _stakingPercentage;
+        emit StakingPercentageSet(_stakingPercentage);
+    }
+
     function setLicenseContract(address _licenseContract) public onlyRole(DEFAULT_ADMIN_ROLE) {
         if (!_isContract(_licenseContract)) revert LicenseContractMustBeContract();
 
@@ -222,14 +236,6 @@ contract VaultFactory is AccessControl, IVaultFactory {
 
         STAKING = IStaking(_stakingContract);
         emit StakingContractSet(_stakingContract);
-    }
-
-    function setStakingPercentage(uint256 _stakingPercentage) public onlyRole(DEFAULT_ADMIN_ROLE) {
-        if (_stakingPercentage > MAX_BIPS) revert StakingPercentageCannotBeGreaterThanMaxBips();
-        if (_stakingPercentage == 0) revert StakingPercentageCannotBeZero();
-
-        stakingPercentage = _stakingPercentage;
-        emit StakingPercentageSet(_stakingPercentage);
     }
 
     function getVaultEntity(address _vault) public view returns (address) {

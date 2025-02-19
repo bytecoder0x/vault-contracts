@@ -5,26 +5,17 @@ import {ERC4626Upgradeable} from "@openzeppelin/contracts-upgradeable/token/ERC2
 import {OwnableUpgradeable} from "@openzeppelin/contracts-upgradeable/access/OwnableUpgradeable.sol";
 import {Initializable} from "@openzeppelin/contracts-upgradeable/proxy/utils/Initializable.sol";
 import {SafeERC20Upgradeable} from "@openzeppelin/contracts-upgradeable/token/ERC20/utils/SafeERC20Upgradeable.sol";
-
-import {IUniswapV2Router01} from "@uniswap/v2-periphery/contracts/interfaces/IUniswapV2Router01.sol";
-import {ISwapRouter} from "@uniswap/v3-periphery/contracts/interfaces/ISwapRouter.sol";
-import {IQuoterV2} from "@uniswap/v3-periphery/contracts/interfaces/IQuoterV2.sol";
+import {SwapHandler} from "../components/SwapHandler.sol";
 
 import {IERC20Upgradeable} from "@openzeppelin/contracts-upgradeable/token/ERC20/IERC20Upgradeable.sol";
 import {IScoring} from "../interfaces/vaults/IScoring.sol";
 import {IVault} from "../interfaces/vaults/IVault.sol";
 import {IStaking} from "../interfaces/vaults/IStaking.sol";
 
-contract Vault is Initializable, ERC4626Upgradeable, OwnableUpgradeable, IVault {
+contract Vault is Initializable, ERC4626Upgradeable, OwnableUpgradeable, SwapHandler, IVault {
     using SafeERC20Upgradeable for IERC20Upgradeable;
 
     uint256 public constant MAX_BIPS = 100_00;
-    uint256 public constant SLIPPAGE_MULTIPLIER = MAX_BIPS - 2_00; // slippage == 2%
-    uint256 public constant TRANSACTION_TIMEOUT = 15 minutes;
-
-    IUniswapV2Router01 public ROUTER_V2;
-    ISwapRouter public ROUTER_V3;
-    IQuoterV2 public QUOTER;
 
     IScoring public SCORING;
     IStaking public STAKING;
@@ -42,45 +33,31 @@ contract Vault is Initializable, ERC4626Upgradeable, OwnableUpgradeable, IVault 
     uint256 public unlockEndTime;
     uint256 public totalDeposits;
     uint256 public refundableAmountInGoil;
-    uint256 public stakingPercentage;
+    uint256 public amountForStaking;
 
-    function initialize(
-        address _entity,
-        address _scoring,
-        address _treasury,
-        address _staking,
-        address _goilToken,
-        address _depositToken,
-        address _routerV2,
-        address _routerV3,
-        address _quoter,
-        uint256 _desiredCap,
-        uint256 _promisedCap,
-        uint256 _startTime,
-        uint256 _fundingEndTime,
-        uint256 _unlockEndTime,
-        uint256 _refundableAmountInGoil,
-        uint256 _stakingPercentage
-    ) external initializer {
-        __ERC4626_init(IERC20Upgradeable(_depositToken));
-        __Ownable_init();
-        transferOwnership(_entity);
+    function initialize(VaultParams memory _vaultParams, DexParams memory _dexParams) external initializer {
+        if (_vaultParams.entity == address(0)) revert EntityCannotBeZeroAddress();
+        if (_vaultParams.startTime < block.timestamp) revert StartTimeCannotBeInThePast();
+        if (_vaultParams.fundingEndTime < _vaultParams.startTime) revert FundingEndTimeCannotBeBeforeStartTime();
+        if (_vaultParams.unlockEndTime < _vaultParams.fundingEndTime) revert UnlockEndTimeCannotBeBeforeFundingEndTime();
         
-        SCORING = IScoring(_scoring);
-        STAKING = IStaking(_staking);
-        GOIL_TOKEN = IERC20Upgradeable(_goilToken);
-        DEPOSIT_TOKEN = _depositToken;
-        TREASURY = _treasury;
-        ROUTER_V2 = IUniswapV2Router01(_routerV2);
-        ROUTER_V3 = ISwapRouter(_routerV3);
-        QUOTER = IQuoterV2(_quoter);
-        desiredCap = _desiredCap;
-        promisedCap = _promisedCap;
-        startTime = _startTime;
-        fundingEndTime = _fundingEndTime;
-        unlockEndTime = _unlockEndTime;
-        refundableAmountInGoil = _refundableAmountInGoil;
-        stakingPercentage = _stakingPercentage;
+        __ERC4626_init(IERC20Upgradeable(_vaultParams.depositToken));
+        __SwapHandler_init(_dexParams.routerV2, _dexParams.routerV3, _dexParams.quoter);
+        __Ownable_init();
+        transferOwnership(_vaultParams.entity);
+        
+        SCORING = IScoring(_vaultParams.scoring);
+        STAKING = IStaking(_vaultParams.staking);
+        GOIL_TOKEN = IERC20Upgradeable(_vaultParams.goilToken);
+        DEPOSIT_TOKEN = _vaultParams.depositToken;
+        TREASURY = _vaultParams.treasury;
+        desiredCap = _vaultParams.desiredCap;
+        promisedCap = _vaultParams.promisedCap;
+        startTime = _vaultParams.startTime;
+        fundingEndTime = _vaultParams.fundingEndTime;
+        unlockEndTime = _vaultParams.unlockEndTime;
+        refundableAmountInGoil = _vaultParams.refundableAmountInGoil;
+        amountForStaking = _vaultParams.amountForStaking;
     }
 
     function deposit(uint256 _amountToDeposit) public returns (uint256) {
@@ -92,44 +69,19 @@ contract Vault is Initializable, ERC4626Upgradeable, OwnableUpgradeable, IVault 
     }
 
     function depositFromEntity() external onlyOwner {
-        uint256 currentTime = block.timestamp;
-
-        if (currentTime <= fundingEndTime) revert FundingEndTimeIsNotReached();
-
+        if (block.timestamp <= fundingEndTime) revert FundingEndTimeIsNotReached();
         if (!isVaultLiquidated) isVaultSuccess = true;
 
+        IERC20Upgradeable token = IERC20Upgradeable(asset());
+        token.safeTransferFrom(msg.sender, address(this), promisedCap);
+
         if (isVaultSuccess) {
-            SCORING.updateEntityScore();
-
-            IERC20Upgradeable(asset()).safeTransferFrom(msg.sender, address(this), promisedCap);
-
-            uint256 stakingAmountInGoil = _swap(getAmountForStaking(), address(this));
-            GOIL_TOKEN.approve(address(STAKING), stakingAmountInGoil);
-            STAKING.depositReward(stakingAmountInGoil);
+            _handleSuccessfulVault();
         } else {
-            uint256 currentBalanceGoil = totalAssets();
-            _updateAsset(DEPOSIT_TOKEN);
-
-            if (refundableAmountInGoil > currentBalanceGoil) {
-                uint256 notWithdrawnGoil = refundableAmountInGoil - currentBalanceGoil;
-
-                uint256 notWithdrawnPercentage = notWithdrawnGoil * MAX_BIPS / refundableAmountInGoil;
-
-                uint256 depositAmount = (promisedCap * notWithdrawnPercentage) / MAX_BIPS;
-                uint256 amountToTreasury = promisedCap - depositAmount;
-
-                IERC20Upgradeable(asset()).safeTransferFrom(msg.sender, address(this), depositAmount);
-
-                _swap(amountToTreasury, TREASURY);
-                GOIL_TOKEN.transfer(TREASURY, notWithdrawnGoil);
-            } else {
-                IERC20Upgradeable(asset()).safeTransferFrom(msg.sender, address(this), promisedCap);
-                GOIL_TOKEN.transfer(TREASURY, currentBalanceGoil);
-            }
-
+            _handleFailedVault();
         }
 
-        unlockEndTime = currentTime;
+        unlockEndTime = block.timestamp;
         emit DepositFromEntity(promisedCap);
     }
 
@@ -150,6 +102,10 @@ contract Vault is Initializable, ERC4626Upgradeable, OwnableUpgradeable, IVault 
         _liquidate();
     }
 
+    // explanation why we can't move that to internal "_withdraw" function:
+    // In these functions "withdraw" and "redeem" check on possible amount of assets to withdraw
+    // In example when vault is liquidatable we firstly check amount of assets to withdraw and
+    // user can't withdraw more since amount of assets 0 and we need to liquidate vault first
     function withdraw(uint256 _assets, address _receiver, address _owner) public override returns (uint256) {
         if (isLiquidatable()) _liquidate();
         return super.withdraw(_assets, _receiver, _owner);
@@ -158,11 +114,6 @@ contract Vault is Initializable, ERC4626Upgradeable, OwnableUpgradeable, IVault 
     function redeem(uint256 _shares, address _receiver, address _owner) public override returns (uint256) {
         if (isLiquidatable()) _liquidate();
         return super.redeem(_shares, _receiver, _owner);
-    }
-
-    function getAmountForStaking() public view returns (uint256) {
-        uint256 profit = promisedCap - desiredCap;
-        return (profit * stakingPercentage) / MAX_BIPS;
     }
 
     function getVaultState() public view returns (VaultState) {
@@ -196,6 +147,32 @@ contract Vault is Initializable, ERC4626Upgradeable, OwnableUpgradeable, IVault 
 
     function owner() public view override(IVault, OwnableUpgradeable) returns (address) {
         return super.owner();
+    }
+
+    function _handleSuccessfulVault() private {
+        SCORING.updateEntityScore();
+
+        uint256 stakingAmountInGoil = _swap(amountForStaking, address(this), address(GOIL_TOKEN), DEPOSIT_TOKEN);
+        GOIL_TOKEN.approve(address(STAKING), stakingAmountInGoil);
+        STAKING.depositReward(stakingAmountInGoil);
+    }
+
+    function _handleFailedVault() private {
+        uint256 currentBalanceGoil = totalAssets();
+        _updateAsset(DEPOSIT_TOKEN);
+
+        if (refundableAmountInGoil > currentBalanceGoil) {
+            uint256 notWithdrawnGoil = refundableAmountInGoil - currentBalanceGoil;
+            uint256 notWithdrawnPercentage = (notWithdrawnGoil * MAX_BIPS) / refundableAmountInGoil;
+
+            uint256 depositAmount = (promisedCap * notWithdrawnPercentage) / MAX_BIPS;
+            uint256 amountToTreasury = promisedCap - depositAmount;
+
+            _swap(amountToTreasury, TREASURY, address(GOIL_TOKEN), DEPOSIT_TOKEN);
+            GOIL_TOKEN.transfer(TREASURY, notWithdrawnGoil);
+        } else {
+            GOIL_TOKEN.transfer(TREASURY, currentBalanceGoil);
+        }
     }
 
     function _deposit(
@@ -244,138 +221,6 @@ contract Vault is Initializable, ERC4626Upgradeable, OwnableUpgradeable, IVault 
         _updateAsset(address(GOIL_TOKEN));
 
         SCORING.updateEntityScore();
-    }
-
-    function _swap(uint256 _amountIn, address _recipient) private returns (uint256 amountOut) {
-        address tokenOut = address(GOIL_TOKEN);
-
-        address tokenIn = address(asset());
-        (Swap decision, uint24 fee, uint256 maxAmount) = _decider(_amountIn, tokenIn, tokenOut);
-
-        if (decision == Swap.V2) {
-            address[] memory path = new address[](2);
-            path[0] = tokenIn;
-            path[1] = tokenOut;
-
-            amountOut = _swapV2(path, _amountIn, maxAmount, _recipient);
-        } else {
-            amountOut = _swapV3(tokenIn, tokenOut, fee, _amountIn, maxAmount, _recipient);
-        }
-    }
-
-    function _decider(uint256 _amountIn, address _tokenIn, address _tokenOut) private returns (Swap, uint24, uint256) {
-        uint256 amount1 = _getQuote(_tokenIn, _tokenOut, _amountIn, 5_00); //fee 0.05%
-        uint256 amount2 = _getQuote(_tokenIn, _tokenOut, _amountIn, 3_000); //fee 0.3%
-        uint256 amount3 = _getQuote(_tokenIn, _tokenOut, _amountIn, 10_000); //fee 1%
-        uint256 amount4;
-
-        address[] memory path = new address[](2);
-        path[0] = _tokenIn;
-        path[1] = _tokenOut;
-
-        try ROUTER_V2.getAmountsOut(_amountIn, path) returns (uint256[] memory result) {
-            amount4 = result[1];
-        } catch {
-            amount4 = 0;
-        }
-        
-        uint256 maxAmount = amount1;
-        uint24 fee = 5_00;
-        Swap decision = Swap.V3_500;
-
-        if (amount2 > maxAmount) {
-            maxAmount = amount2;
-            decision = Swap.V3_3000;
-            fee = 30_00;
-        }
-
-        if (amount3 > maxAmount) {
-            maxAmount = amount3;
-            decision = Swap.V3_10000;
-            fee = 10_000;
-        }
-
-        if (amount4 > maxAmount) {
-            maxAmount = amount4;
-            decision = Swap.V2;
-            fee = 0;
-        }
-
-        return (decision, fee, maxAmount);
-    }
-
-    function _getQuote(
-        address _tokenIn,
-        address _tokenOut,
-        uint256 _amountIn,
-        uint24 _fee
-    ) private returns (uint256) {
-        uint256 amountOut;
-
-        IQuoterV2.QuoteExactInputSingleParams memory params = IQuoterV2
-            .QuoteExactInputSingleParams({
-                tokenIn: _tokenIn,
-                tokenOut: _tokenOut,
-                amountIn: _amountIn,
-                fee: _fee,
-                sqrtPriceLimitX96: 0
-            });
-
-        try QUOTER.quoteExactInputSingle(params) returns (uint256 out, uint160 , uint32, uint256) {
-            amountOut = out;
-        } catch {
-            amountOut = 0;
-        }
-        
-        return amountOut;
-    }
-
-    function _swapV2(
-        address[] memory _path,
-        uint256 _amountIn,
-        uint256 _amountOut,
-        address _recipient
-    ) private returns (uint256 amountOut) {
-        uint256 amountOutMin = (_amountOut * SLIPPAGE_MULTIPLIER) / MAX_BIPS;
-        uint256 deadline = block.timestamp + TRANSACTION_TIMEOUT;
-
-        IERC20Upgradeable(_path[0]).approve(address(ROUTER_V2), _amountIn);
-        uint256[] memory amounts = ROUTER_V2.swapExactTokensForTokens(
-            _amountIn,
-            amountOutMin,
-            _path,
-            _recipient,
-            deadline
-        );
-
-        amountOut = amounts[amounts.length - 1];
-    }
-
-    function _swapV3(
-        address _tokenIn,
-        address _tokenOut,
-        uint24 _fee,
-        uint256 _amountIn,
-        uint256 _amountOut,
-        address _recipient
-    ) private returns (uint256 amountOut) {
-        uint256 amountOutMin = (_amountOut * SLIPPAGE_MULTIPLIER) / MAX_BIPS;
-        uint256 deadline = block.timestamp + TRANSACTION_TIMEOUT;
-
-        IERC20Upgradeable(_tokenIn).approve(address(ROUTER_V3), _amountIn);
-        ISwapRouter.ExactInputSingleParams memory params = ISwapRouter
-            .ExactInputSingleParams({
-                tokenIn: _tokenIn,
-                tokenOut: _tokenOut,
-                fee: _fee,
-                recipient: _recipient,
-                deadline: deadline,
-                amountIn: _amountIn,
-                amountOutMinimum: amountOutMin,
-                sqrtPriceLimitX96: 0
-            });
-
-        amountOut = ROUTER_V3.exactInputSingle(params);
     }
 
     function _isContract(address _address) private view returns (bool) {
