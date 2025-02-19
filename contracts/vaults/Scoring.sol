@@ -10,12 +10,9 @@ import {IScoring} from "../interfaces/vaults/IScoring.sol";
 import {ILicense} from "../interfaces/vaults/ILicense.sol";
 
 contract Scoring is AccessControl, IScoring {
-    bytes32 public constant MANAGER_ROLE = keccak256("MANAGER_ROLE");
     bytes32 public constant SCORING_MANAGER_ROLE = keccak256("SCORING_MANAGER_ROLE");
 
-    uint8 public constant MAX_HISTORY_SCORE_COUNT = 5;
-
-    uint256 public constant EXP = 2_71828; // 2.71828 * SCORE_PRECISION
+    uint256 public constant EXPONENT = 2_71828; // 2.71828 * SCORE_PRECISION
 
     uint24 public constant SCORE_PRECISION = 100_000;
     uint24 public constant MAX_RATIO = 100_000;
@@ -29,6 +26,8 @@ contract Scoring is AccessControl, IScoring {
 
     uint16[] public HISTORY_SCORE_WEIGHTS = [10_000, 10_000, 10_000, 20_000, 50_000];
 
+    uint8 public constant MAX_HISTORY_SCORE_COUNT = 5;
+
     IERC20 public immutable GOIL_TOKEN;
     ITreasury public immutable TREASURY;
     ILicense public immutable LICENSE;
@@ -38,7 +37,7 @@ contract Scoring is AccessControl, IScoring {
     uint256 public thresholdCollateral;
     uint256 public marketConditionRatio;
 
-    mapping(address => PerformanceData) public performanceData;
+    mapping(address => PerformanceData) public performanceData; // reputation ratio and financial health ratio
     mapping(address => uint256[]) public scores;
     mapping(address => uint256) public penalties;
     mapping(address => uint256) public totalFails;
@@ -48,8 +47,8 @@ contract Scoring is AccessControl, IScoring {
         _;
     }
 
-    modifier onlyAdminOrLicense() {
-        if (!hasRole(DEFAULT_ADMIN_ROLE, msg.sender) && msg.sender != address(LICENSE)) revert OnlyAdminOrLicense();
+    modifier onlyManagerOrLicense() {
+        if (!hasRole(SCORING_MANAGER_ROLE, msg.sender) && msg.sender != address(LICENSE)) revert OnlyManagerOrLicense();
         _;
     }
 
@@ -84,13 +83,13 @@ contract Scoring is AccessControl, IScoring {
         _grantRole(SCORING_MANAGER_ROLE, _admin);
     }
 
-    function updateEntityScore() public onlyVault {
+    function updateEntityScore() external onlyVault {
         IVault vault = IVault(msg.sender);
         address entity = vault.owner();
 
         if (!vault.isVaultSuccess()) {
             uint256 entityFails = totalFails[entity] + 1;
-            uint256 penalty = (uint256(SCORE_PRECISION) ** (entityFails + 1)) / (EXP ** entityFails);
+            uint256 penalty = (uint256(SCORE_PRECISION) ** (entityFails + 1)) / (EXPONENT ** entityFails);
         
             totalFails[entity] += 1;
             penalties[entity] = penalty;
@@ -100,52 +99,31 @@ contract Scoring is AccessControl, IScoring {
             TREASURY.unlockCollateral(address(vault));
         }
         
-        uint256 poolSize = vault.desiredCap();
         uint256[] memory entityScores = scores[entity];
-        uint256 totalScores = entityScores.length;
 
-        uint256 lastScore = entityScores[totalScores - 1];
-        uint256 maxPoolSize = getMaxPoolSize(entity);
-        uint256 historicalPerformance = _getHistoricalPerformance(entity);
-        uint256 poolSizeRatio = (poolSize * POOL_SIZE_WEIGHT) / maxPoolSize;
-        uint256 baseScore = lastScore + (poolSizeRatio * historicalPerformance / SCORE_PRECISION);
-        uint256 newScore = baseScore * penalties[entity] / SCORE_PRECISION;
+        uint256 historicalPerformance = _getHistoricalPerformance(entityScores);
+        uint256 poolSizeRatio = (vault.desiredCap() * POOL_SIZE_WEIGHT) / getMaxPoolSize(entity); // pool size div max pool size
 
-        if (newScore > MAX_RATIO) newScore = MAX_RATIO;
-        scores[entity].push(newScore);
+        uint256 scoreWithoutPenalty = getLastScore(entity) + (poolSizeRatio * historicalPerformance / SCORE_PRECISION);
+        uint256 updatedScore = scoreWithoutPenalty * penalties[entity] / SCORE_PRECISION;
 
-        emit EntityScoreUpdated(entity, newScore);
-    }
+        if (updatedScore > MAX_RATIO) updatedScore = MAX_RATIO;
+        scores[entity].push(updatedScore);
 
-    function setInitialScore(address _entity) public onlyAdminOrLicense {
-        (uint256 entityCollateral, ) = TREASURY.collateral(_entity);
-        PerformanceData memory entityPerformanceData = performanceData[_entity];
-
-        if (entityPerformanceData.reputationRatio == 0 && entityPerformanceData.financialHealthRatio == 0) {
-            return;
-        }
-
-        uint256 collateralRatio = (entityCollateral * SCORE_PRECISION) / thresholdCollateral;
-        if (collateralRatio > MAX_RATIO) collateralRatio = MAX_RATIO;
-
-        uint256 weightedCollateralRatio = collateralRatio * TOKENS_COLLATERAL_WEIGHT / SCORE_PRECISION;
-        uint256 weightedReputationRatio = entityPerformanceData.reputationRatio * REPUTATION_WEIGHT / SCORE_PRECISION;
-        uint256 weightedFinancialHealthRatio = entityPerformanceData.financialHealthRatio * FINANCIAL_HEALTH_WEIGHT / SCORE_PRECISION;
-        uint256 weightedMarketConditionRatio = marketConditionRatio * MARKET_CONDITION_WEIGHT / SCORE_PRECISION;
-
-        uint256 initialScore = weightedCollateralRatio + weightedReputationRatio + weightedFinancialHealthRatio + weightedMarketConditionRatio;
-
-        scores[_entity].push(initialScore);
-        penalties[_entity] = MAX_RATIO;
-
-        emit EntityScoreUpdated(_entity, initialScore);
+        emit EntityScoreUpdated(entity, updatedScore);
     }
     
-    function setPerformanceData(address _entity, uint256 _reputationRatio, uint256 _financialHealthRatio) external onlyRole(SCORING_MANAGER_ROLE) {
-        PerformanceData memory entityPerformanceData = performanceData[_entity];
+
+    function setPerformanceData(
+        address _entity,
+        uint256 _reputationRatio,
+        uint256 _financialHealthRatio
+    ) public onlyRole(SCORING_MANAGER_ROLE) {
+        uint256 reputationRatio = performanceData[_entity].reputationRatio;
+        uint256 financialHealthRatio = performanceData[_entity].financialHealthRatio;
 
         if (_entity == address(0)) revert EntityCannotBeZeroAddress();
-        if (entityPerformanceData.reputationRatio != 0 || entityPerformanceData.financialHealthRatio != 0) revert PerformanceDataAlreadySet();
+        if (reputationRatio != 0 || financialHealthRatio != 0) revert PerformanceDataAlreadySet();
         if (_reputationRatio > MAX_RATIO || _reputationRatio == 0) revert InvalidReputationRatio();
         if (_financialHealthRatio > MAX_RATIO || _financialHealthRatio == 0) revert InvalidFinancialHealthRatio();
 
@@ -157,6 +135,43 @@ contract Scoring is AccessControl, IScoring {
         if (LICENSE.getLicenseIsActive(_entity)) setInitialScore(_entity);
 
         emit PerformanceDataUpdated(_entity, _reputationRatio, _financialHealthRatio);
+    }
+
+    function setPerformanceDataBatch(
+        address[] calldata _entities,
+        uint256[] calldata _reputationRatios,
+        uint256[] calldata _financialHealthRatios
+    ) public onlyRole(SCORING_MANAGER_ROLE) {
+        if (_entities.length != _reputationRatios.length || _entities.length != _financialHealthRatios.length) {
+            revert InvalidDataLength();
+        }
+
+        uint256 entitiesLength = _entities.length;
+        for (uint256 i = 0; i < entitiesLength; i++) {
+            setPerformanceData(_entities[i], _reputationRatios[i], _financialHealthRatios[i]);
+        }
+    }
+
+    function setInitialScore(address _entity) public onlyManagerOrLicense {
+        (uint256 entityCollateral, ) = TREASURY.collateral(_entity); // collateral when submitting a license
+
+        uint256 entityReputationRatio = performanceData[_entity].reputationRatio;
+        uint256 entityFinancialHealthRatio = performanceData[_entity].financialHealthRatio;
+
+        uint256 collateralRatio = (entityCollateral * SCORE_PRECISION) / thresholdCollateral;
+        if (collateralRatio > MAX_RATIO) collateralRatio = MAX_RATIO;
+
+        uint256 weightedCollateralRatio = collateralRatio * TOKENS_COLLATERAL_WEIGHT / SCORE_PRECISION;
+        uint256 weightedReputationRatio = entityReputationRatio * REPUTATION_WEIGHT / SCORE_PRECISION;
+        uint256 weightedFinancialHealthRatio = entityFinancialHealthRatio * FINANCIAL_HEALTH_WEIGHT / SCORE_PRECISION;
+        uint256 weightedMarketConditionRatio = marketConditionRatio * MARKET_CONDITION_WEIGHT / SCORE_PRECISION;
+
+        uint256 initialScore = weightedCollateralRatio + weightedReputationRatio + weightedFinancialHealthRatio + weightedMarketConditionRatio;
+
+        scores[_entity].push(initialScore);
+        penalties[_entity] = MAX_RATIO;
+
+        emit EntityScoreUpdated(_entity, initialScore);
     }
 
     function setThresholdCollateral(uint256 _thresholdCollateral) external onlyRole(SCORING_MANAGER_ROLE) {
@@ -187,12 +202,20 @@ contract Scoring is AccessControl, IScoring {
         return scores[_entity];
     }
 
+    function getScoresCount(address _entity) public view returns (uint256) {
+        return scores[_entity].length;
+    }
+
+    function getLastScore(address _entity) public view returns (uint256) {
+        return scores[_entity][scores[_entity].length - 1];
+    }
+    
     function getMaxPoolSize(address _entity) public view returns (uint256 maxPoolSize) {
         uint256 lastScore = scores[_entity][scores[_entity].length - 1];
         maxPoolSize = (lastScore * thresholdCapital) / SCORE_PRECISION;
     }
 
-    function getIsReadyToSetInitialScore(address _entity) public view returns (bool) {
+    function isReadyToSetInitialScore(address _entity) public view returns (bool) {
         uint256 reputationRatio = performanceData[_entity].reputationRatio;
         uint256 financialHealthRatio = performanceData[_entity].financialHealthRatio;
         uint256 totalScores = scores[_entity].length;
@@ -200,18 +223,17 @@ contract Scoring is AccessControl, IScoring {
         return totalScores == 0 && reputationRatio != 0 && financialHealthRatio != 0;
     }
 
-    function _getHistoricalPerformance(address _entity) private view returns (uint256 historicalPerformance) {
+    function _getHistoricalPerformance(uint256[] memory _entityScores) private view returns (uint256 historicalPerformance) {
         uint256 accumulatedHistoricalScore;
         uint256 maxEntityScore;
 
-        uint256[] memory entityScores = scores[_entity];
-        uint256 totalScores = entityScores.length;
+        uint256 totalScores = _entityScores.length;
 
         uint256 historyScoreCount = totalScores < MAX_HISTORY_SCORE_COUNT ? totalScores : MAX_HISTORY_SCORE_COUNT;
         uint256 historyScoreWeightsCount = HISTORY_SCORE_WEIGHTS.length;
         
         for (uint256 i = 0; i < historyScoreCount; i++) {  
-            uint256 currentScore = entityScores[totalScores - (i + 1)];
+            uint256 currentScore = _entityScores[totalScores - (i + 1)];
             uint256 currentWeight = HISTORY_SCORE_WEIGHTS[historyScoreWeightsCount - (i + 1)];
 
             accumulatedHistoricalScore += currentScore * currentWeight / SCORE_PRECISION;
