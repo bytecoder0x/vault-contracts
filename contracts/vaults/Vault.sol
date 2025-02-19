@@ -2,7 +2,6 @@
 pragma solidity ^0.8.27;
 
 import {ERC4626Upgradeable} from "@openzeppelin/contracts-upgradeable/token/ERC20/extensions/ERC4626Upgradeable.sol";
-import {OwnableUpgradeable} from "@openzeppelin/contracts-upgradeable/access/OwnableUpgradeable.sol";
 import {Initializable} from "@openzeppelin/contracts-upgradeable/proxy/utils/Initializable.sol";
 import {SafeERC20Upgradeable} from "@openzeppelin/contracts-upgradeable/token/ERC20/utils/SafeERC20Upgradeable.sol";
 import {SwapHandler} from "../components/SwapHandler.sol";
@@ -12,7 +11,7 @@ import {IScoring} from "../interfaces/vaults/IScoring.sol";
 import {IVault} from "../interfaces/vaults/IVault.sol";
 import {IStaking} from "../interfaces/vaults/IStaking.sol";
 
-contract Vault is Initializable, ERC4626Upgradeable, OwnableUpgradeable, SwapHandler, IVault {
+contract Vault is Initializable, ERC4626Upgradeable, SwapHandler, IVault {
     using SafeERC20Upgradeable for IERC20Upgradeable;
 
     uint256 public constant MAX_BIPS = 100_00;
@@ -22,6 +21,7 @@ contract Vault is Initializable, ERC4626Upgradeable, OwnableUpgradeable, SwapHan
     IERC20Upgradeable public GOIL_TOKEN;
     address public TREASURY;
     address public DEPOSIT_TOKEN;
+    address public ENTITY;
 
     bool public isVaultSuccess;
     bool public isVaultLiquidated;
@@ -35,6 +35,11 @@ contract Vault is Initializable, ERC4626Upgradeable, OwnableUpgradeable, SwapHan
     uint256 public refundableAmountInGoil;
     uint256 public amountForStaking;
 
+    modifier onlyEntity() {
+        if (msg.sender != ENTITY) revert OnlyEntityCanCall();
+        _;
+    }
+
     function initialize(VaultParams memory _vaultParams, DexParams memory _dexParams) external initializer {
         if (_vaultParams.entity == address(0)) revert EntityCannotBeZeroAddress();
         if (_vaultParams.startTime < block.timestamp) revert StartTimeCannotBeInThePast();
@@ -43,14 +48,13 @@ contract Vault is Initializable, ERC4626Upgradeable, OwnableUpgradeable, SwapHan
         
         __ERC4626_init(IERC20Upgradeable(_vaultParams.depositToken));
         __SwapHandler_init(_dexParams.routerV2, _dexParams.routerV3, _dexParams.quoter);
-        __Ownable_init();
-        transferOwnership(_vaultParams.entity);
         
         SCORING = IScoring(_vaultParams.scoring);
         STAKING = IStaking(_vaultParams.staking);
         GOIL_TOKEN = IERC20Upgradeable(_vaultParams.goilToken);
         DEPOSIT_TOKEN = _vaultParams.depositToken;
         TREASURY = _vaultParams.treasury;
+        ENTITY = _vaultParams.entity;
         desiredCap = _vaultParams.desiredCap;
         promisedCap = _vaultParams.promisedCap;
         startTime = _vaultParams.startTime;
@@ -68,7 +72,7 @@ contract Vault is Initializable, ERC4626Upgradeable, OwnableUpgradeable, SwapHan
         return withdraw(_amountToWithdraw, msg.sender, msg.sender);
     }
 
-    function depositFromEntity() external onlyOwner {
+    function depositFromEntity() external onlyEntity {
         if (block.timestamp <= fundingEndTime) revert FundingEndTimeIsNotReached();
         if (!isVaultLiquidated) isVaultSuccess = true;
 
@@ -85,7 +89,7 @@ contract Vault is Initializable, ERC4626Upgradeable, OwnableUpgradeable, SwapHan
         emit DepositFromEntity(promisedCap);
     }
 
-    function withdrawToEntity() external onlyOwner {
+    function withdrawToEntity() external onlyEntity {
         uint256 currentTime = block.timestamp;
 
         if (currentTime <= fundingEndTime) revert FundingEndTimeIsNotReached();
@@ -143,10 +147,6 @@ contract Vault is Initializable, ERC4626Upgradeable, OwnableUpgradeable, SwapHan
         return currentTime < unlockEndTime
             && currentTime > fundingEndTime
             && totalAssets() < desiredCap;
-    }
-
-    function owner() public view override(IVault, OwnableUpgradeable) returns (address) {
-        return super.owner();
     }
 
     function _handleSuccessfulVault() private {

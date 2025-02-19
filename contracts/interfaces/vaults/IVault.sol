@@ -53,12 +53,14 @@ interface IVault {
     error VaultIsUnlocked();
     error VaultIsNotFailed();
     error VaultIsNotLiquidatable();
+    error OnlyEntityCanCall();
 
     event DepositFromEntity(uint256 amount);
     event WithdrawToEntity(uint256 amount);
 
     function SCORING() external view returns (IScoring);
     function GOIL_TOKEN() external view returns (IERC20Upgradeable);
+    function ENTITY() external view returns (address);
     function isVaultSuccess() external view returns (bool);
     function desiredCap() external view returns (uint256);
     function promisedCap() external view returns (uint256);
@@ -66,7 +68,6 @@ interface IVault {
     function fundingEndTime() external view returns (uint256);
     function unlockEndTime() external view returns (uint256);
     function amountForStaking() external view returns (uint256);
-    function owner() external view returns (address);
 
     function initialize(VaultParams memory _vaultParams, DexParams memory _dexParams) external;
     function deposit(uint256 _amountToDeposit) external returns (uint256);

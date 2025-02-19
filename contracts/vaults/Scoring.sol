@@ -85,7 +85,7 @@ contract Scoring is AccessControl, IScoring {
 
     function updateEntityScore() external onlyVault {
         IVault vault = IVault(msg.sender);
-        address entity = vault.owner();
+        address entity = vault.ENTITY();
 
         if (!vault.isVaultSuccess()) {
             uint256 entityFails = totalFails[entity] + 1;
