@@ -17,6 +17,7 @@ interface IScoring {
     error InvalidReputationRatio();
     error InvalidFinancialHealthRatio();
     error InvalidMarketConditionRatio();
+    error InvalidDataLength();
     error ThresholdCapitalCannotBeTheSame();
     error ThresholdCollateralCannotBeTheSame();
     error ReputationRatioCannotBeTheSame();
@@ -28,7 +29,7 @@ interface IScoring {
     error LicenseIsNotPending();
     error IncorrectWeights();
     error OnlyVaultFactory();
-    error OnlyAdminOrLicense();
+    error OnlyManagerOrLicense();
 
     event ThresholdCapitalUpdated(uint256 indexed thresholdCapital);
     event ThresholdCollateralUpdated(uint256 indexed thresholdCollateral);
@@ -38,9 +39,14 @@ interface IScoring {
 
     function updateEntityScore() external;
     function setInitialScore(address _entity) external;
+    function setPerformanceDataBatch(address[] calldata _entities, uint256[] calldata _reputationRatios, uint256[] calldata _financialHealthRatios) external;
+    function setPerformanceData(address _entity, uint256 _reputationRatio, uint256 _financialHealthRatio) external;
     function setThresholdCollateral(uint256 _thresholdCollateral) external;
     function setThresholdCapital(uint256 _thresholdCapital) external;
     function setMarketConditionRatio(uint256 _marketConditionRatio) external;
-    function getIsReadyToSetInitialScore(address _entity) external view returns (bool);
+    function isReadyToSetInitialScore(address _entity) external view returns (bool);
     function getMaxPoolSize(address _entity) external view returns (uint256 maxPoolSize);
+    function getScores(address _entity) external view returns (uint256[] memory scores);
+    function getScoresCount(address _entity) external view returns (uint256 scoresCount);
+    function getLastScore(address _entity) external view returns (uint256 lastScore);
 }
