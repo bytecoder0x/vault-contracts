@@ -155,7 +155,7 @@ describe.only("Main Flow", function () {
 
 		// only one vault is created by the entity
 		expect(vaults.length).to.equal(1);
-		expect(await vault.owner()).to.equal(entity.address);
+		expect(await vault.ENTITY()).to.equal(entity.address);
 
 		const amountToDeposit = ethers.parseEther("25000"); // 25k$
 		await stableToken.connect(user1).mint(user1.address, amountToDeposit);

@@ -16,7 +16,6 @@ contract Treasury is AccessControl, ITreasury {
     bytes32 public constant TREASURY_MANAGER_ROLE = keccak256("TREASURY_MANAGER_ROLE");
 
     uint256 public constant MAX_COLLATERAL_PERCENTAGE = 100_00;
-    uint256 public constant REQUIRED_COLLATERAL_PERCENTAGE = 10_00;
 
     IVaultFactory public immutable VAULT_FACTORY;
     IERC20 public immutable GOIL_TOKEN;
@@ -25,6 +24,7 @@ contract Treasury is AccessControl, ITreasury {
     address public SCORING;
     address public STAKING;
 
+    uint256 public requiredCollateralPercentage = 10_00;
     uint256 public totalRefundableAmount;
 
     mapping(address => Collateral) public collateral;
@@ -124,7 +124,7 @@ contract Treasury is AccessControl, ITreasury {
     }
 
     function unlockCollateral(address _vault) external onlyScoring withSetupNecessaryContracts {
-        address entity = IVault(_vault).owner();
+        address entity = IVault(_vault).ENTITY();
         uint256 collateralAmount = VAULT_FACTORY.getCollateralAmount(_vault);
         uint256 refundableAmount = VAULT_FACTORY.getRefundableAmount(_vault);
 
@@ -171,6 +171,17 @@ contract Treasury is AccessControl, ITreasury {
         emit StakingTokensTransferred(_recipient, _amount);
     }
 
+    function setRequiredCollateralPercentage(
+        uint256 _requiredCollateralPercentage
+    ) external onlyRole(TREASURY_MANAGER_ROLE) {
+        if (_requiredCollateralPercentage == 0) revert RequiredCollateralPercentageCannotBeZero();
+        if (_requiredCollateralPercentage == requiredCollateralPercentage) revert RequiredCollateralPercentageCannotBeTheSame();
+        if (_requiredCollateralPercentage > MAX_COLLATERAL_PERCENTAGE) revert RequiredCollateralPercentageTooHigh();
+
+        requiredCollateralPercentage = _requiredCollateralPercentage;
+        emit RequiredCollateralPercentageUpdated(_requiredCollateralPercentage);
+    }
+
     function withdrawTokens(
         address _recipient,
         address _token,
@@ -212,7 +223,7 @@ contract Treasury is AccessControl, ITreasury {
 
     function getRequiredCollateral(uint256 _poolSize) public view returns (uint256) {
         uint256 poolSizeInGoil = ORACLE.getTokenAmountForPayment(_poolSize);
-        uint256 defaultCollateral = poolSizeInGoil * REQUIRED_COLLATERAL_PERCENTAGE / MAX_COLLATERAL_PERCENTAGE;
+        uint256 defaultCollateral = poolSizeInGoil * requiredCollateralPercentage / MAX_COLLATERAL_PERCENTAGE;
         uint256 totalBalanceGoil = GOIL_TOKEN.balanceOf(address(this));
 
         if (totalBalanceGoil < totalRefundableAmount + poolSizeInGoil) {

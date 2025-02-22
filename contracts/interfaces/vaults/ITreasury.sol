@@ -14,10 +14,10 @@ interface ITreasury {
     event CollateralUnlocked(address indexed entity, uint256 amount);
     event CollateralDeposited(address indexed entity, uint256 amount);
     event CollateralWithdrawn(address indexed entity, uint256 amount);
+    event RequiredCollateralPercentageUpdated(uint256 requiredCollateralPercentage);
     event ScoringContractUpdated(address indexed scoring);
     event StakingContractUpdated(address indexed staking);
     event LicenseContractUpdated(address indexed license);
-
 
     error OracleMustBeContract();
     error ZeroAmountToFundVault();
@@ -47,6 +47,9 @@ interface ITreasury {
     error ScoringAlreadySet();
     error StakingAlreadySet();
     error LicenseAlreadySet();
+    error RequiredCollateralPercentageCannotBeZero();
+    error RequiredCollateralPercentageCannotBeTheSame();
+    error RequiredCollateralPercentageTooHigh();
     
     function collateral(address _entity) external view returns (uint256, uint256);
 
@@ -55,6 +58,7 @@ interface ITreasury {
     function withdrawCollateral() external;
     function unlockCollateral(address _vault) external;
     function fundVault(address _vault) external;
+    function setRequiredCollateralPercentage(uint256 _requiredCollateralPercentage) external;
     function unstakeTokens(address _recipient, uint256 _amount) external;
     function withdrawTokens(address _recipient, address _token, uint256 _amount) external;
     function withdrawAllTokens(address _token) external;

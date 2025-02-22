@@ -36,6 +36,7 @@ contract Scoring is AccessControl, IScoring {
     uint256 public thresholdCapital;
     uint256 public thresholdCollateral;
     uint256 public marketConditionRatio;
+    uint256 public maxIncreaseScorePercentage = 10_000;
 
     mapping(address => PerformanceData) public performanceData; // reputation ratio and financial health ratio
     mapping(address => uint256[]) public scores;
@@ -100,14 +101,19 @@ contract Scoring is AccessControl, IScoring {
         }
         
         uint256[] memory entityScores = scores[entity];
+        uint256 lastScore = entityScores[entityScores.length - 1];
 
         uint256 historicalPerformance = _getHistoricalPerformance(entityScores);
         uint256 poolSizeRatio = (vault.desiredCap() * POOL_SIZE_WEIGHT) / getMaxPoolSize(entity); // pool size div max pool size
 
-        uint256 scoreWithoutPenalty = getLastScore(entity) + (poolSizeRatio * historicalPerformance / SCORE_PRECISION);
+        uint256 scoreWithoutPenalty = lastScore + (poolSizeRatio * historicalPerformance / SCORE_PRECISION);
         uint256 updatedScore = scoreWithoutPenalty * penalties[entity] / SCORE_PRECISION;
 
-        if (updatedScore > MAX_RATIO) updatedScore = MAX_RATIO;
+        uint256 maxAllowedScore = (lastScore * (MAX_RATIO + maxIncreaseScorePercentage)) / MAX_RATIO;
+
+        updatedScore = updatedScore > maxAllowedScore ? maxAllowedScore : updatedScore;
+        updatedScore = updatedScore > MAX_RATIO ? MAX_RATIO : updatedScore;
+
         scores[entity].push(updatedScore);
 
         emit EntityScoreUpdated(entity, updatedScore);
