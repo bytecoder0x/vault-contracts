@@ -30,15 +30,20 @@ interface IScoring {
     error IncorrectWeights();
     error OnlyVaultFactory();
     error OnlyManagerOrLicense();
+    error PoolSizeWeightCannotBeZero();
+    error PoolSizeWeightCannotBeGreaterThanMaxRatio();
+    error PoolSizeWeightCannotBeTheSame();
 
     event ThresholdCapitalUpdated(uint256 indexed thresholdCapital);
     event ThresholdCollateralUpdated(uint256 indexed thresholdCollateral);
     event MarketConditionRatioUpdated(uint256 indexed marketConditionRatio);
     event EntityScoreUpdated(address indexed entity, uint256 newScore);
+    event PoolSizeWeightUpdated(uint16 indexed poolSizeWeight);
     event PerformanceDataUpdated(address indexed entity, uint256 reputationRatio, uint256 financialHealthRatio);
 
     function updateEntityScore() external;
     function setInitialScore(address _entity) external;
+    function setPoolSizeWeight(uint16 _poolSizeWeight) external;
     function setPerformanceDataBatch(address[] calldata _entities, uint256[] calldata _reputationRatios, uint256[] calldata _financialHealthRatios) external;
     function setPerformanceData(address _entity, uint256 _reputationRatio, uint256 _financialHealthRatio) external;
     function setThresholdCollateral(uint256 _thresholdCollateral) external;

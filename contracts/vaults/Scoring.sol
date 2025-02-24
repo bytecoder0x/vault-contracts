@@ -22,8 +22,6 @@ contract Scoring is AccessControl, IScoring {
     uint16 public constant FINANCIAL_HEALTH_WEIGHT = 25_000;
     uint16 public constant MARKET_CONDITION_WEIGHT = 15_000;
 
-    uint16 public constant POOL_SIZE_WEIGHT = 10_000;
-
     uint16[] public HISTORY_SCORE_WEIGHTS = [10_000, 10_000, 10_000, 20_000, 50_000];
 
     uint8 public constant MAX_HISTORY_SCORE_COUNT = 5;
@@ -33,14 +31,14 @@ contract Scoring is AccessControl, IScoring {
     ILicense public immutable LICENSE;
     IVaultFactory public immutable VAULT_FACTORY;
 
+    uint16 public poolSizeWeight = 10_000; // 0.1 (10%) its means that score cannot be increased by more than 10%
+
     uint256 public thresholdCapital;
     uint256 public thresholdCollateral;
     uint256 public marketConditionRatio;
-    uint256 public maxIncreaseScorePercentage = 10_000;
 
     mapping(address => PerformanceData) public performanceData; // reputation ratio and financial health ratio
     mapping(address => uint256[]) public scores;
-    mapping(address => uint256) public penalties;
     mapping(address => uint256) public totalFails;
 
     modifier onlyVault() {
@@ -88,13 +86,13 @@ contract Scoring is AccessControl, IScoring {
         IVault vault = IVault(msg.sender);
         address entity = vault.ENTITY();
 
+        uint256 penalty = MAX_RATIO;
         if (!vault.isVaultSuccess()) {
             uint256 entityFails = totalFails[entity] + 1;
-            uint256 penalty = (uint256(SCORE_PRECISION) ** (entityFails + 1)) / (EXPONENT ** entityFails);
-        
+
+            penalty = (uint256(SCORE_PRECISION) ** (entityFails + 1)) / (EXPONENT ** entityFails);
             totalFails[entity] += 1;
-            penalties[entity] = penalty;
-        
+
             TREASURY.fundVault(address(vault));
         }  else {
             TREASURY.unlockCollateral(address(vault));
@@ -104,14 +102,11 @@ contract Scoring is AccessControl, IScoring {
         uint256 lastScore = entityScores[entityScores.length - 1];
 
         uint256 historicalPerformance = _getHistoricalPerformance(entityScores);
-        uint256 poolSizeRatio = (vault.desiredCap() * POOL_SIZE_WEIGHT) / getMaxPoolSize(entity); // pool size div max pool size
+        uint256 poolSizeRatio = (vault.desiredCap() * poolSizeWeight) / getMaxPoolSize(entity); // pool size div max pool size
 
         uint256 scoreWithoutPenalty = lastScore + (poolSizeRatio * historicalPerformance / SCORE_PRECISION);
-        uint256 updatedScore = scoreWithoutPenalty * penalties[entity] / SCORE_PRECISION;
+        uint256 updatedScore = scoreWithoutPenalty * penalty / SCORE_PRECISION;
 
-        uint256 maxAllowedScore = (lastScore * (MAX_RATIO + maxIncreaseScorePercentage)) / MAX_RATIO;
-
-        updatedScore = updatedScore > maxAllowedScore ? maxAllowedScore : updatedScore;
         updatedScore = updatedScore > MAX_RATIO ? MAX_RATIO : updatedScore;
 
         scores[entity].push(updatedScore);
@@ -175,9 +170,17 @@ contract Scoring is AccessControl, IScoring {
         uint256 initialScore = weightedCollateralRatio + weightedReputationRatio + weightedFinancialHealthRatio + weightedMarketConditionRatio;
 
         scores[_entity].push(initialScore);
-        penalties[_entity] = MAX_RATIO;
 
         emit EntityScoreUpdated(_entity, initialScore);
+    }
+
+    function setPoolSizeWeight(uint16 _poolSizeWeight) external onlyRole(SCORING_MANAGER_ROLE) {
+        if (_poolSizeWeight > MAX_RATIO) revert PoolSizeWeightCannotBeGreaterThanMaxRatio();
+        if (poolSizeWeight == _poolSizeWeight) revert PoolSizeWeightCannotBeTheSame();
+        if (_poolSizeWeight == 0) revert PoolSizeWeightCannotBeZero();
+
+        poolSizeWeight = _poolSizeWeight;
+        emit PoolSizeWeightUpdated(_poolSizeWeight);
     }
 
     function setThresholdCollateral(uint256 _thresholdCollateral) external onlyRole(SCORING_MANAGER_ROLE) {
