@@ -122,7 +122,7 @@ contract Vault is Initializable, ERC4626Upgradeable, SwapHandler, IVault {
 
     function getVaultState() public view returns (VaultState) {
         uint256 currentTime = block.timestamp;
-
+        
         if (currentTime < startTime) return VaultState.NOT_STARTED;
         if (currentTime > startTime && currentTime < fundingEndTime) return VaultState.FUNDING;
         if (isNotRaisedDesiredCap()) return VaultState.NOT_RAISED;

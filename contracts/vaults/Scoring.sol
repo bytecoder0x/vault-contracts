@@ -108,7 +108,6 @@ contract Scoring is AccessControl, IScoring {
         uint256 updatedScore = scoreWithoutPenalty * penalty / SCORE_PRECISION;
 
         updatedScore = updatedScore > MAX_RATIO ? MAX_RATIO : updatedScore;
-
         scores[entity].push(updatedScore);
 
         emit EntityScoreUpdated(entity, updatedScore);
