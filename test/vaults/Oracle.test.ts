@@ -40,7 +40,6 @@ describe.only("GoilOracle", function () {
 	describe("Oracle Functionality", function () {
         it("Should return price per token", async function () {
             const price = await oracle.getPricePerToken();
-            console.log(price);
             expect(price).to.be.equal(goilPrice);
         });
 
