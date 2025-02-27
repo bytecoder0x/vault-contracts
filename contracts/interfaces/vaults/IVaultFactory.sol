@@ -4,6 +4,7 @@ pragma solidity ^0.8.27;
 import {IOracle} from "./IOracle.sol";
 import {ITreasury} from "./ITreasury.sol";
 import {IScoring} from "./IScoring.sol";
+import {IVault} from "./IVault.sol";
 
 interface IVaultFactory {
     error AdminCannotBeZeroAddress();
@@ -63,7 +64,7 @@ interface IVaultFactory {
     event VaultCreated(address indexed vault, address indexed entity, VaultInfo vaultInfo);
 
     function ORACLE() external view returns (IOracle);
-    function VAULT_IMPLEMENTATION() external view returns (address);
+    function VAULT_IMPLEMENTATION() external view returns (IVault);
     function TREASURY() external view returns (ITreasury);
     function SCORING() external view returns (IScoring);
     function MAX_BIPS() external view returns (uint256);

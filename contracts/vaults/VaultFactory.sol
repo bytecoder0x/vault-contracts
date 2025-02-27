@@ -25,7 +25,7 @@ contract VaultFactory is AccessControl, IVaultFactory {
 
     IOracle public immutable ORACLE;
     address public immutable GOIL_TOKEN;
-    address public immutable VAULT_IMPLEMENTATION;
+    IVault public immutable VAULT_IMPLEMENTATION = new Vault();
 
     address public immutable ROUTER_V3;
     address public immutable ROUTER_V2;
@@ -87,8 +87,6 @@ contract VaultFactory is AccessControl, IVaultFactory {
         ROUTER_V3 = _routerV3;
         QUOTER = _quoter;
 
-        VAULT_IMPLEMENTATION = address(new Vault());
-
         _grantRole(DEFAULT_ADMIN_ROLE, _admin);
         _grantRole(VAULT_MANAGER_ROLE, _admin);
     }
@@ -145,7 +143,7 @@ contract VaultFactory is AccessControl, IVaultFactory {
             quoter: QUOTER
         });
 
-        Vault vault = Vault(VAULT_IMPLEMENTATION.clone());
+        IVault vault = VAULT_IMPLEMENTATION.clone();
         vault.initialize(vaultParams, dexParams);
 
         VaultInfo memory newVault = VaultInfo({

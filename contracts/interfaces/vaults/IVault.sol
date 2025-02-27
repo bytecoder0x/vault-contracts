@@ -69,6 +69,7 @@ interface IVault {
     function unlockEndTime() external view returns (uint256);
     function amountForStaking() external view returns (uint256);
 
+    function clone() external returns (IVault);
     function initialize(VaultParams memory _vaultParams, DexParams memory _dexParams) external;
     function deposit(uint256 _amountToDeposit) external returns (uint256);
     function withdraw(uint256 _amountToWithdraw) external returns (uint256);
