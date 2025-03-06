@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: UNLICENSED
 pragma solidity ^0.8.27;
 
-import {ERC4626Upgradeable} from "@openzeppelin/contracts-upgradeable/token/ERC20/extensions/ERC4626Upgradeable.sol";
+import {ERC4626Upgradeable} from "./ERC4626/ERC4626Upgradeable.sol";
 import {Initializable} from "@openzeppelin/contracts-upgradeable/proxy/utils/Initializable.sol";
 import {SafeERC20Upgradeable} from "@openzeppelin/contracts-upgradeable/token/ERC20/utils/SafeERC20Upgradeable.sol";
 import {SwapHandler} from "../components/SwapHandler.sol";
@@ -15,6 +15,7 @@ contract Vault is Initializable, ERC4626Upgradeable, SwapHandler, IVault {
     using SafeERC20Upgradeable for IERC20Upgradeable;
 
     uint256 public constant MAX_BIPS = 100_00;
+    uint24 public constant FAILURE_RATE_PRECISION = 100_000;
 
     IScoring public SCORING;
     IStaking public STAKING;
@@ -25,6 +26,8 @@ contract Vault is Initializable, ERC4626Upgradeable, SwapHandler, IVault {
 
     bool public isVaultSuccess;
     bool public isVaultLiquidated;
+
+    uint24 public failureRate; // it can be 0 to 100_000
 
     uint256 public desiredCap;
     uint256 public promisedCap;
@@ -40,7 +43,7 @@ contract Vault is Initializable, ERC4626Upgradeable, SwapHandler, IVault {
         _;
     }
 
-    function initialize(VaultParams memory _vaultParams, DexParams memory _dexParams) external initializer {
+    function initialize(VaultParams calldata _vaultParams, DexParams calldata _dexParams) external initializer {
         if (_vaultParams.entity == address(0)) revert EntityCannotBeZeroAddress();
         if (_vaultParams.startTime < block.timestamp) revert StartTimeCannotBeInThePast();
         if (_vaultParams.fundingEndTime < _vaultParams.startTime) revert FundingEndTimeCannotBeBeforeStartTime();
@@ -217,7 +220,7 @@ contract Vault is Initializable, ERC4626Upgradeable, SwapHandler, IVault {
 
     function _liquidate() private {
         isVaultLiquidated = true;
-
+        failureRate = FAILURE_RATE_PRECISION;
         _updateAsset(address(GOIL_TOKEN));
 
         SCORING.updateEntityScore();

@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: UNLICENSED
 pragma solidity ^0.8.27;
 
+import {ABDKMath64x64} from "abdk-libraries-solidity/ABDKMath64x64.sol";
 import {AccessControl} from "@openzeppelin/contracts/access/AccessControl.sol";
 import {IERC20} from "@openzeppelin/contracts/token/ERC20/IERC20.sol";
 import {IVaultFactory} from "../interfaces/vaults/IVaultFactory.sol";
@@ -39,7 +40,7 @@ contract Scoring is AccessControl, IScoring {
 
     mapping(address => PerformanceData) public performanceData; // reputation ratio and financial health ratio
     mapping(address => uint256[]) public scores;
-    mapping(address => uint256) public totalFails;
+    mapping(address => uint256) public totalFails; // total fails with score precision
 
     modifier onlyVault() {
         if (!VAULT_FACTORY.isVault(msg.sender)) revert OnlyVaultFactory();
@@ -88,10 +89,10 @@ contract Scoring is AccessControl, IScoring {
 
         uint256 penalty = MAX_RATIO;
         if (!vault.isVaultSuccess()) {
-            uint256 entityFails = totalFails[entity] + 1;
+            uint24 failureRate = vault.failureRate();
 
-            penalty = (uint256(SCORE_PRECISION) ** (entityFails + 1)) / (EXPONENT ** entityFails);
-            totalFails[entity] += 1;
+            penalty = _calculatePenalty(failureRate);
+            totalFails[entity] += failureRate;
 
             TREASURY.fundVault(address(vault));
         }  else {
@@ -101,7 +102,7 @@ contract Scoring is AccessControl, IScoring {
         uint256[] memory entityScores = scores[entity];
         uint256 lastScore = entityScores[entityScores.length - 1];
 
-        uint256 historicalPerformance = _getHistoricalPerformance(entityScores);
+        uint256 historicalPerformance = _calculateHistoricalPerformance(entityScores);
         uint256 poolSizeRatio = (vault.desiredCap() * poolSizeWeight) / getMaxPoolSize(entity); // pool size div max pool size
 
         uint256 scoreWithoutPenalty = lastScore + (poolSizeRatio * historicalPerformance / SCORE_PRECISION);
@@ -231,7 +232,21 @@ contract Scoring is AccessControl, IScoring {
         return totalScores == 0 && reputationRatio != 0 && financialHealthRatio != 0;
     }
 
-    function _getHistoricalPerformance(uint256[] memory _entityScores) private view returns (uint256 historicalPerformance) {
+    function _calculatePenalty(uint24 _failureRate) private pure returns (uint256 penalty) {
+        int24 negativeFailureRate = int24(_failureRate) * -1; // convert to negative number
+        
+        // calculate power of exponent
+        int128 power = ABDKMath64x64.div(
+            ABDKMath64x64.fromInt(negativeFailureRate),
+            ABDKMath64x64.fromUInt(SCORE_PRECISION)
+        );
+        // calculate exponent
+        int128 result = ABDKMath64x64.exp(power);
+
+        penalty = uint256(ABDKMath64x64.mulu(result, SCORE_PRECISION));
+    }
+
+    function _calculateHistoricalPerformance(uint256[] memory _entityScores) private view returns (uint256 historicalPerformance) {
         uint256 accumulatedHistoricalScore;
         uint256 maxEntityScore;
 

@@ -5,7 +5,7 @@ import { loadFixture, time } from "@nomicfoundation/hardhat-network-helpers";
 import { expect } from "chai";
 import { ethers } from "hardhat";
 import { APPLICATION_FEE, LICENSE_MONTHLY_FEE, DEFAULT_VAULT_PARAMS } from "../constants";
-describe.only("GoilTreasury", function () {
+describe("GoilTreasury", function () {
 	let treasury: Treasury;
 	let vaultFactory: VaultFactory;
 	let license: License;
@@ -76,7 +76,7 @@ describe.only("GoilTreasury", function () {
 		});
 	});
 
-	it.only("Should allow depositing collateral and fees through license", async function () {  
+	it("Should allow depositing collateral and fees through license", async function () {  
         await submitLicense();
 		expect(await goilToken.balanceOf(treasury.target)).to.equal(APPLICATION_FEE);
 
