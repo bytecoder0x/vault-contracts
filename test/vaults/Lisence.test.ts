@@ -4,7 +4,7 @@ import { License, MockERC20, MockQuadata, Scoring, Treasury } from "../../typech
 import { HardhatEthersSigner } from "@nomicfoundation/hardhat-ethers/signers";
 import { loadFixture } from "@nomicfoundation/hardhat-network-helpers";
 import { time } from "@nomicfoundation/hardhat-network-helpers";
-import { deployAllContracts } from "../utils.test";
+import { deployAllContracts } from "../utils";
 import { APPLICATION_FEE, LICENSE_MONTHLY_FEE } from "../constants";
 
 describe("GoilLicense", function () {

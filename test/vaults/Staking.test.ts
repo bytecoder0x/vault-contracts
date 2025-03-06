@@ -1,6 +1,6 @@
 import { Staking, MockERC20, Treasury, VaultFactory, MockQuadata, License, Scoring } from "../../typechain-types";
 import { HardhatEthersSigner } from "@nomicfoundation/hardhat-ethers/signers";
-import { deployAllContracts, createAndRepayVault } from "../utils.test";
+import { deployAllContracts, createAndRepayVault } from "../utils";
 import { loadFixture, mineUpTo, mine } from "@nomicfoundation/hardhat-network-helpers";
 import { expect } from "chai";
 import { ethers } from "hardhat";

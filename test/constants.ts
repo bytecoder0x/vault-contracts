@@ -16,3 +16,10 @@ export const THRESHOLD_CAPITAL = ethers.parseEther("1000000");
 export const MARKET_CONDITION_RATIO = 100_000;
 
 export const AMOUNT_FOR_ROUTER = ethers.parseEther("100000000");
+
+export const DEFAULT_VAULT_PARAMS = {
+    rate: 11_00,
+    fundingPeriod: 14 * 24 * 60 * 60, // 14 days
+    unlockPeriod: 3 * 31 * 24 * 60 * 60, // 3 months
+    desiredCap: ethers.parseEther("100000"),
+}

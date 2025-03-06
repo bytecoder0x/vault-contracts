@@ -24,8 +24,8 @@ contract VaultFactory is AccessControl, IVaultFactory {
     uint256 public constant VAULT_EXPIRY_LIMIT_AFTER_LICENSE = 30 days;
 
     IOracle public immutable ORACLE;
+    address public immutable VAULT_IMPLEMENTATION = address(new Vault());
     address public immutable GOIL_TOKEN;
-    IVault public immutable VAULT_IMPLEMENTATION = new Vault();
 
     address public immutable ROUTER_V3;
     address public immutable ROUTER_V2;
@@ -143,7 +143,7 @@ contract VaultFactory is AccessControl, IVaultFactory {
             quoter: QUOTER
         });
 
-        IVault vault = VAULT_IMPLEMENTATION.clone();
+        IVault vault = IVault(VAULT_IMPLEMENTATION.clone());
         vault.initialize(vaultParams, dexParams);
 
         VaultInfo memory newVault = VaultInfo({
