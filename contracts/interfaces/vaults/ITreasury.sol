@@ -27,6 +27,7 @@ interface ITreasury {
     error OnlyStakingAllowed();
     error OnlyLicenseAllowed();
     error OnlyVaultFactoryAllowed();
+    error OnlyVaultAllowed();
     error VaultFactoryMustBeContract();
     error GoilTokenMustBeContract();
     error ScoringMustBeContract();
@@ -57,7 +58,7 @@ interface ITreasury {
     function depositCollateral(address _entity, uint256 _amount) external;
     function withdrawCollateral() external;
     function unlockCollateral(address _vault) external;
-    function fundVault(address _vault) external;
+    function fundVault() external;
     function setRequiredCollateralPercentage(uint256 _requiredCollateralPercentage) external;
     function unstakeTokens(address _recipient, uint256 _amount) external;
     function withdrawTokens(address _recipient, address _token, uint256 _amount) external;

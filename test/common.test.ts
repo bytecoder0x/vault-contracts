@@ -18,7 +18,7 @@ import {
 import { HardhatEthersSigner } from "@nomicfoundation/hardhat-ethers/signers";
 import { loadFixture, mineUpTo } from "@nomicfoundation/hardhat-network-helpers";
 import { time } from "@nomicfoundation/hardhat-network-helpers";
-import { deployAllContracts } from "./utils.test";
+import { deployAllContracts } from "./utils";
 
 describe.only("Main Flow", function () {
 	let admin: HardhatEthersSigner;
@@ -76,6 +76,11 @@ describe.only("Main Flow", function () {
         thresholdCollateral = fixture.THRESHOLD_COLLATERAL;
         thresholdCapital = fixture.THRESHOLD_CAPITAL;
 	});
+
+	// it.only("Checks expENeg055", async function () {
+	// 	const result = await scoring._calculatePenalty(100000);
+	// 	console.log(result);
+	// });
 
 	it("Checks all functionality from getting license to successful vault repayment", async function () {
 		const collateralAmount = ethers.parseEther("100000"); // this amount will be used for calculating initial score
@@ -201,7 +206,7 @@ describe.only("Main Flow", function () {
         // it needs for swap 1% of profit in stable -> goil and transfer to staking
 		await goilToken.mint(mockRouterV3.target, stakingAmount);
 
-		await vault.connect(entity).depositFromEntity();
+		await vault.connect(entity).depositFromEntity(promisedCapital);
 
         // vault is successfully repaid and users can withdraw their shares
         expect(await stableToken.balanceOf(vault.target)).to.equal(promisedCapital - stakingAmount); // 10% profit
@@ -386,6 +391,55 @@ describe.only("Main Flow", function () {
         // entity scores is decreasing, it means that entity can create pool with lower size
         const previousMaxPoolSize = ethers.parseEther("800000"); // 800k
         expect(await scoring.getMaxPoolSize(entity.address)).to.be.lessThan(previousMaxPoolSize);
+
+
+
+
+
+
+		// additional vault
+		await goilToken.mint(entity.address, requiredCollateral);
+		await goilToken.connect(entity).approve(treasury.target, requiredCollateral);
+
+		const startTime2 = (await time.latest()) + 24 * 60 * 60; // in 1 day
+		await vaultFactory.connect(entity).createVault(depositToken, rate, desiredCap, startTime2, fundingPeriod, unlockPeriod);
+		const vaults2 = await vaultFactory.getAllVaults();
+		const vault2 = await ethers.getContractAt("Vault", vaults2[1].vault);
+
+		await stableToken.connect(user1).mint(user1.address, amountToDeposit);
+		await stableToken.connect(user2).mint(user2.address, amountToDeposit);
+		await stableToken.connect(user3).mint(user3.address, amountToDeposit);
+		await stableToken.connect(user4).mint(user4.address, amountToDeposit);
+		await stableToken.connect(user1).approve(vault2.target, amountToDeposit);
+		await stableToken.connect(user2).approve(vault2.target, amountToDeposit);
+		await stableToken.connect(user3).approve(vault2.target, amountToDeposit);
+		await stableToken.connect(user4).approve(vault2.target, amountToDeposit);
+
+		await time.increaseTo(startTime2);
+		await vault2.connect(user1)["deposit(uint256)"](amountToDeposit);
+		await vault2.connect(user2)["deposit(uint256)"](amountToDeposit);
+		await vault2.connect(user3)["deposit(uint256)"](amountToDeposit);
+		await vault2.connect(user4)["deposit(uint256)"](amountToDeposit);
+
+		// wait for the funding period to end
+		await time.increaseTo(startTime2 + fundingPeriod + 1);
+		await vault2.connect(entity).withdrawToEntity();
+
+		const promisedProfit = (amountToDeposit * 4n * 11n) / 100n;
+        const promisedCapital = (amountToDeposit * 4n) + promisedProfit;
+		await stableToken.connect(entity).mint(entity.address, promisedProfit);
+
+        // since 1$ = 1 goil i can get 1% of profit in stable token //! staking amount in goil
+        const stakingAmount = (promisedProfit * 1n) / 100n; // 1% of profit successful vault transfer to staking
+
+		// entity can deposit all the funds
+		await stableToken.connect(entity).approve(vault2.target, promisedCapital);
+        // it needs for swap 1% of profit in stable -> goil and transfer to staking
+		await goilToken.mint(mockRouterV3.target, stakingAmount);
+
+		await vault2.connect(entity).depositFromEntity(promisedCapital);
+
+		console.log(await scoring.getScores(entity.address));
     });
 });
 

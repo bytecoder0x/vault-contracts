@@ -13,8 +13,6 @@ import {ILicense} from "../interfaces/vaults/ILicense.sol";
 contract Scoring is AccessControl, IScoring {
     bytes32 public constant SCORING_MANAGER_ROLE = keccak256("SCORING_MANAGER_ROLE");
 
-    uint256 public constant EXPONENT = 2_71828; // 2.71828 * SCORE_PRECISION
-
     uint24 public constant SCORE_PRECISION = 100_000;
     uint24 public constant MAX_RATIO = 100_000;
 
@@ -23,6 +21,7 @@ contract Scoring is AccessControl, IScoring {
     uint16 public constant FINANCIAL_HEALTH_WEIGHT = 25_000;
     uint16 public constant MARKET_CONDITION_WEIGHT = 15_000;
 
+    // weights for current score in history (last score is the most important and has the highest weight)
     uint16[] public HISTORY_SCORE_WEIGHTS = [10_000, 10_000, 10_000, 20_000, 50_000];
 
     uint8 public constant MAX_HISTORY_SCORE_COUNT = 5;
@@ -32,7 +31,9 @@ contract Scoring is AccessControl, IScoring {
     ILicense public immutable LICENSE;
     IVaultFactory public immutable VAULT_FACTORY;
 
-    uint16 public poolSizeWeight = 10_000; // 0.1 (10%) its means that score cannot be increased by more than 10%
+    // if entity repay after liquidation, failure rate will be multiplied by this factor
+    uint24 public failureRateFactor = 120_000; // firstly is 1.2 (with precision 100_000)
+    uint24 public poolSizeWeight = 10_000; // 0.1 (10%) its means that score cannot be increased by more than 10%
 
     uint256 public thresholdCapital;
     uint256 public thresholdCollateral;
@@ -43,7 +44,7 @@ contract Scoring is AccessControl, IScoring {
     mapping(address => uint256) public totalFails; // total fails with score precision
 
     modifier onlyVault() {
-        if (!VAULT_FACTORY.isVault(msg.sender)) revert OnlyVaultFactory();
+        if (!VAULT_FACTORY.isVault(msg.sender)) revert OnlyVault();
         _;
     }
 
@@ -89,12 +90,10 @@ contract Scoring is AccessControl, IScoring {
 
         uint256 penalty = MAX_RATIO;
         if (!vault.isVaultSuccess()) {
-            uint24 failureRate = vault.failureRate();
+            uint256 failureRate = _calculateFailureRate(address(vault));
 
             penalty = _calculatePenalty(failureRate);
             totalFails[entity] += failureRate;
-
-            TREASURY.fundVault(address(vault));
         }  else {
             TREASURY.unlockCollateral(address(vault));
         }
@@ -174,7 +173,15 @@ contract Scoring is AccessControl, IScoring {
         emit EntityScoreUpdated(_entity, initialScore);
     }
 
-    function setPoolSizeWeight(uint16 _poolSizeWeight) external onlyRole(SCORING_MANAGER_ROLE) {
+    function setFailureRateFactor(uint24 _failureRateFactor) external onlyRole(SCORING_MANAGER_ROLE) {
+        if (_failureRateFactor == 0) revert FailureRateFactorCannotBeZero();
+        if (failureRateFactor == _failureRateFactor) revert FailureRateFactorCannotBeTheSame();
+
+        failureRateFactor = _failureRateFactor;
+        emit FailureRateFactorUpdated(_failureRateFactor);
+    }
+
+    function setPoolSizeWeight(uint24 _poolSizeWeight) external onlyRole(SCORING_MANAGER_ROLE) {
         if (_poolSizeWeight > MAX_RATIO) revert PoolSizeWeightCannotBeGreaterThanMaxRatio();
         if (poolSizeWeight == _poolSizeWeight) revert PoolSizeWeightCannotBeTheSame();
         if (_poolSizeWeight == 0) revert PoolSizeWeightCannotBeZero();
@@ -232,8 +239,8 @@ contract Scoring is AccessControl, IScoring {
         return totalScores == 0 && reputationRatio != 0 && financialHealthRatio != 0;
     }
 
-    function _calculatePenalty(uint24 _failureRate) private pure returns (uint256 penalty) {
-        int24 negativeFailureRate = int24(_failureRate) * -1; // convert to negative number
+    function _calculatePenalty(uint256 _failureRate) private pure returns (uint256 penalty) {
+        int256 negativeFailureRate = int256(_failureRate) * -1; // convert to negative number
         
         // calculate power of exponent
         int128 power = ABDKMath64x64.div(
@@ -244,6 +251,12 @@ contract Scoring is AccessControl, IScoring {
         int128 result = ABDKMath64x64.exp(power);
 
         penalty = uint256(ABDKMath64x64.mulu(result, SCORE_PRECISION));
+    }
+
+    function _calculateFailureRate(address _vault) private view returns (uint256 failureRate) {
+        (uint256 promisedAmount, uint256 unpaidAmount) = IVault(_vault).getPromisedAndUnpaidAmount();
+
+        failureRate = (unpaidAmount * SCORE_PRECISION) / promisedAmount;
     }
 
     function _calculateHistoricalPerformance(uint256[] memory _entityScores) private view returns (uint256 historicalPerformance) {

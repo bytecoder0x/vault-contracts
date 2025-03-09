@@ -7,27 +7,25 @@ import {SafeERC20Upgradeable} from "@openzeppelin/contracts-upgradeable/token/ER
 import {SwapHandler} from "../components/SwapHandler.sol";
 
 import {IERC20Upgradeable} from "@openzeppelin/contracts-upgradeable/token/ERC20/IERC20Upgradeable.sol";
-import {IScoring} from "../interfaces/vaults/IScoring.sol";
 import {IVault} from "../interfaces/vaults/IVault.sol";
+import {IScoring} from "../interfaces/vaults/IScoring.sol";
+import {ITreasury} from "../interfaces/vaults/ITreasury.sol";
 import {IStaking} from "../interfaces/vaults/IStaking.sol";
 
 contract Vault is Initializable, ERC4626Upgradeable, SwapHandler, IVault {
     using SafeERC20Upgradeable for IERC20Upgradeable;
 
     uint256 public constant MAX_BIPS = 100_00;
-    uint24 public constant FAILURE_RATE_PRECISION = 100_000;
 
     IScoring public SCORING;
     IStaking public STAKING;
+    ITreasury public TREASURY;
     IERC20Upgradeable public GOIL_TOKEN;
-    address public TREASURY;
     address public DEPOSIT_TOKEN;
     address public ENTITY;
 
     bool public isVaultSuccess;
     bool public isVaultLiquidated;
-
-    uint24 public failureRate; // it can be 0 to 100_000
 
     uint256 public desiredCap;
     uint256 public promisedCap;
@@ -56,7 +54,7 @@ contract Vault is Initializable, ERC4626Upgradeable, SwapHandler, IVault {
         STAKING = IStaking(_vaultParams.staking);
         GOIL_TOKEN = IERC20Upgradeable(_vaultParams.goilToken);
         DEPOSIT_TOKEN = _vaultParams.depositToken;
-        TREASURY = _vaultParams.treasury;
+        TREASURY = ITreasury(_vaultParams.treasury);
         ENTITY = _vaultParams.entity;
         desiredCap = _vaultParams.desiredCap;
         promisedCap = _vaultParams.promisedCap;
@@ -75,21 +73,22 @@ contract Vault is Initializable, ERC4626Upgradeable, SwapHandler, IVault {
         return withdraw(_amountToWithdraw, msg.sender, msg.sender);
     }
 
-    function depositFromEntity() external onlyEntity {
+    function depositFromEntity(uint256 _amountToDeposit) external onlyEntity {
         if (block.timestamp <= fundingEndTime) revert FundingEndTimeIsNotReached();
-        if (!isVaultLiquidated) isVaultSuccess = true;
 
-        IERC20Upgradeable token = IERC20Upgradeable(asset());
-        token.safeTransferFrom(msg.sender, address(this), promisedCap);
+        IERC20Upgradeable(asset()).safeTransferFrom(msg.sender, address(this), _amountToDeposit);
 
-        if (isVaultSuccess) {
-            _handleSuccessfulVault();
-        } else {
-            _handleFailedVault();
+        if (totalAssets() >= promisedCap && !isVaultLiquidated) {
+            SCORING.updateEntityScore();
+            isVaultSuccess = true;
+            unlockEndTime = block.timestamp;
+
+            uint256 stakingAmountInGoil = _swap(amountForStaking, address(this), address(GOIL_TOKEN), DEPOSIT_TOKEN);
+            GOIL_TOKEN.approve(address(STAKING), stakingAmountInGoil);
+            STAKING.depositReward(stakingAmountInGoil);
         }
 
-        unlockEndTime = block.timestamp;
-        emit DepositFromEntity(promisedCap);
+        emit DepositFromEntity(_amountToDeposit);
     }
 
     function withdrawToEntity() external onlyEntity {
@@ -111,8 +110,10 @@ contract Vault is Initializable, ERC4626Upgradeable, SwapHandler, IVault {
 
     // explanation why we can't move that to internal "_withdraw" function:
     // In these functions "withdraw" and "redeem" check on possible amount of assets to withdraw
-    // In example when vault is liquidatable we firstly check amount of assets to withdraw and
-    // user can't withdraw more since amount of assets 0 and we need to liquidate vault first
+    // For example when vault is liquidatable we firstly check amount of assets to withdraw and
+    // user can't withdraw more since amount of assets 0 and we need to liquidate vault first 
+    // and after that user can withdraw NEW assets after liquidation
+    // check withdraw & redeem functions in ERC4626Upgradeable for more details
     function withdraw(uint256 _assets, address _receiver, address _owner) public override returns (uint256) {
         if (isLiquidatable()) _liquidate();
         return super.withdraw(_assets, _receiver, _owner);
@@ -134,6 +135,12 @@ contract Vault is Initializable, ERC4626Upgradeable, SwapHandler, IVault {
 
         return VaultState.LOCKED;
     }
+    
+    function getPromisedAndUnpaidAmount() public view returns (uint256 promisedAmount, uint256 unpaidAmount) {
+        if (totalAssets() >= promisedCap) return (promisedCap, 0);
+
+        return (promisedCap, promisedCap - totalAssets());
+    }
 
     function isLiquidatable() public view returns (bool) {
         uint256 currentTime = block.timestamp;
@@ -152,31 +159,26 @@ contract Vault is Initializable, ERC4626Upgradeable, SwapHandler, IVault {
             && totalAssets() < desiredCap;
     }
 
-    function _handleSuccessfulVault() private {
-        SCORING.updateEntityScore();
+    // function _handleSuccessfulVault() private {
+    // }
 
-        uint256 stakingAmountInGoil = _swap(amountForStaking, address(this), address(GOIL_TOKEN), DEPOSIT_TOKEN);
-        GOIL_TOKEN.approve(address(STAKING), stakingAmountInGoil);
-        STAKING.depositReward(stakingAmountInGoil);
-    }
+    // function _handleFailedVault() private {
+    //     uint256 currentBalanceGoil = totalAssets();
+    //     _updateAsset(DEPOSIT_TOKEN);
 
-    function _handleFailedVault() private {
-        uint256 currentBalanceGoil = totalAssets();
-        _updateAsset(DEPOSIT_TOKEN);
+    //     if (refundableAmountInGoil > currentBalanceGoil) {
+    //         uint256 notWithdrawnGoil = refundableAmountInGoil - currentBalanceGoil;
+    //         uint256 notWithdrawnPercentage = (notWithdrawnGoil * MAX_BIPS) / refundableAmountInGoil;
 
-        if (refundableAmountInGoil > currentBalanceGoil) {
-            uint256 notWithdrawnGoil = refundableAmountInGoil - currentBalanceGoil;
-            uint256 notWithdrawnPercentage = (notWithdrawnGoil * MAX_BIPS) / refundableAmountInGoil;
+    //         uint256 depositAmount = (promisedCap * notWithdrawnPercentage) / MAX_BIPS;
+    //         uint256 amountToTreasury = promisedCap - depositAmount;
 
-            uint256 depositAmount = (promisedCap * notWithdrawnPercentage) / MAX_BIPS;
-            uint256 amountToTreasury = promisedCap - depositAmount;
-
-            _swap(amountToTreasury, TREASURY, address(GOIL_TOKEN), DEPOSIT_TOKEN);
-            GOIL_TOKEN.transfer(TREASURY, notWithdrawnGoil);
-        } else {
-            GOIL_TOKEN.transfer(TREASURY, currentBalanceGoil);
-        }
-    }
+    //         _swap(amountToTreasury, TREASURY, address(GOIL_TOKEN), DEPOSIT_TOKEN);
+    //         GOIL_TOKEN.transfer(TREASURY, notWithdrawnGoil);
+    //     } else {
+    //         GOIL_TOKEN.transfer(TREASURY, currentBalanceGoil);
+    //     }
+    // }
 
     function _deposit(
         address _caller,
@@ -211,19 +213,24 @@ contract Vault is Initializable, ERC4626Upgradeable, SwapHandler, IVault {
         super._withdraw(_caller, _receiver, _owner, _assets, _shares);
     }
 
-    function _updateAsset(address _newAsset) private {
-        //! _tryGetAssetDecimals, _asset and _underlyingDecimals in ERC4626Upgradeable must be internal for this case
-        (bool success, uint8 assetDecimals) = _tryGetAssetDecimals(IERC20Upgradeable(_newAsset));
-        _underlyingDecimals = success ? assetDecimals : 18;
-        _asset = IERC20Upgradeable(_newAsset);
-    }
-
+    // update entity score & swap assets to goil and send to treasury & update asset to goil for vault
     function _liquidate() private {
         isVaultLiquidated = true;
-        failureRate = FAILURE_RATE_PRECISION;
-        _updateAsset(address(GOIL_TOKEN));
-
         SCORING.updateEntityScore();
+
+        uint256 totalAsset = totalAssets();
+        if (desiredCap > totalAsset) {
+            if (totalAsset > 0) {
+                _swap(totalAsset, address(TREASURY), address(GOIL_TOKEN), DEPOSIT_TOKEN);
+            }
+
+            //! _tryGetAssetDecimals, _asset and _underlyingDecimals in ERC4626Upgradeable must be internal for this case
+            (bool success, uint8 assetDecimals) = _tryGetAssetDecimals(IERC20Upgradeable(GOIL_TOKEN));
+            _underlyingDecimals = success ? assetDecimals : 18;
+            _asset = IERC20Upgradeable(GOIL_TOKEN);
+
+            TREASURY.fundVault();
+        }
     }
 
     function _isContract(address _address) private view returns (bool) {

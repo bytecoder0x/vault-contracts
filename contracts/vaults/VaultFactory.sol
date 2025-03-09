@@ -252,6 +252,10 @@ contract VaultFactory is AccessControl, IVaultFactory {
         return vaults[_vault];
     }
 
+    function getLastVaultAddressByEntity(address _entity) public view returns (address) {
+        return vaultsByEntity[_entity][vaultsByEntity[_entity].length - 1].vault;
+    }
+
     function getVaultsByEntity(address _entity) public view returns (VaultInfo[] memory) {
         return vaultsByEntity[_entity];
     }

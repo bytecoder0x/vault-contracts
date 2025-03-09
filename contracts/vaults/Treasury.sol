@@ -44,6 +44,11 @@ contract Treasury is AccessControl, ITreasury {
         _;
     }
 
+    modifier onlyVault() {
+        if (!VAULT_FACTORY.isVault(msg.sender)) revert OnlyVaultAllowed();
+        _;
+    }
+
     modifier onlyLicense() {
         if (msg.sender != address(LICENSE)) revert OnlyLicenseAllowed();
         _;
@@ -136,11 +141,11 @@ contract Treasury is AccessControl, ITreasury {
         emit CollateralUnlocked(entity, collateralAmount);
     }
 
-    function fundVault(address _vault) external onlyScoring withSetupNecessaryContracts {
-        if (!VAULT_FACTORY.isVault(_vault)) revert VaultIsNotValid();
+    function fundVault() external onlyVault withSetupNecessaryContracts {
+        address vault = msg.sender;
 
-        address entity = VAULT_FACTORY.getVaultEntity(_vault);
-        uint256 refundableAmount = VAULT_FACTORY.getRefundableAmount(_vault);
+        address entity = IVault(vault).ENTITY();
+        uint256 refundableAmount = VAULT_FACTORY.getRefundableAmount(vault);
         uint256 collateralAmountByEntity = collateral[entity].collateralLocked;
 
         if (collateralAmountByEntity < refundableAmount) {
@@ -151,8 +156,8 @@ contract Treasury is AccessControl, ITreasury {
 
         totalRefundableAmount -= refundableAmount;
 
-        GOIL_TOKEN.transfer(_vault, refundableAmount);
-        emit VaultFunded(_vault, refundableAmount);
+        GOIL_TOKEN.transfer(vault, refundableAmount);
+        emit VaultFunded(vault, refundableAmount);
     }
 
     function unstakeTokens(
