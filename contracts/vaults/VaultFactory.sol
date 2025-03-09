@@ -21,7 +21,7 @@ contract VaultFactory is AccessControl, IVaultFactory {
     uint256 public constant MAX_BIPS = 100_00;
     uint256 public constant COLLATERAL_PERCENTAGE = 10_00;
 
-    uint256 public constant VAULT_EXPIRY_LIMIT_AFTER_LICENSE = 30 days;
+    uint256 public constant VAULT_EXPIRY_LIMIT_AFTER_LICENSE = 2628000; // ~ 30.42 days it is more accurate in seconds;
 
     IOracle public immutable ORACLE;
     address public immutable VAULT_IMPLEMENTATION = address(new Vault());
@@ -133,7 +133,6 @@ contract VaultFactory is AccessControl, IVaultFactory {
             startTime: _startTime,
             fundingEndTime: fundingEndTime,
             unlockEndTime: unlockEndTime,
-            refundableAmountInGoil: refundableAmount,
             amountForStaking: (promisedCap - _desiredCap) * stakingPercentage / MAX_BIPS
         });
 

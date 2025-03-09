@@ -31,8 +31,8 @@ contract Scoring is AccessControl, IScoring {
     ILicense public immutable LICENSE;
     IVaultFactory public immutable VAULT_FACTORY;
 
-    // if entity repay after liquidation, failure rate will be multiplied by this factor
-    uint24 public failureRateFactor = 120_000; // firstly is 1.2 (with precision 100_000)
+    // if entity repay after liquidation, success rate based on paid amount will be multiplied by this factor
+    uint24 public decreaseSuccessFactor = 80_000; // firstly is 0.8 (with precision 100_000)
     uint24 public poolSizeWeight = 10_000; // 0.1 (10%) its means that score cannot be increased by more than 10%
 
     uint256 public thresholdCapital;
@@ -92,8 +92,8 @@ contract Scoring is AccessControl, IScoring {
         if (!vault.isVaultSuccess()) {
             uint256 failureRate = _calculateFailureRate(address(vault));
 
-            penalty = _calculatePenalty(failureRate);
             totalFails[entity] += failureRate;
+            penalty = _calculatePenalty(totalFails[entity]);
         }  else {
             TREASURY.unlockCollateral(address(vault));
         }
@@ -112,8 +112,26 @@ contract Scoring is AccessControl, IScoring {
 
         emit EntityScoreUpdated(entity, updatedScore);
     }
-    
 
+    function updateEntityScoreAfterLiquidation(uint256 _depositedAmount) external onlyVault {
+        IVault vault = IVault(msg.sender);
+        address entity = vault.ENTITY();
+
+        // if entity created new vault after liquidation, we don't update score
+        if (VAULT_FACTORY.getLastVaultAddressByEntity(entity) != msg.sender) return;
+
+        uint256 successRateWithoutFactor = _depositedAmount * SCORE_PRECISION / vault.promisedCap();
+        uint256 successRate = successRateWithoutFactor * decreaseSuccessFactor / SCORE_PRECISION;
+
+        uint256 previousScoreWithoutPenalty = getLastScore(entity) * SCORE_PRECISION / _calculatePenalty(totalFails[entity]);
+        uint256 updatedScore = previousScoreWithoutPenalty * _calculatePenalty(totalFails[entity] - successRate) / SCORE_PRECISION;
+
+        scores[entity][scores[entity].length - 1] = updatedScore;
+        totalFails[entity] -= successRate;
+
+        emit EntityScoreUpdatedAfterLiquidation(entity, updatedScore);
+    }
+    
     function setPerformanceData(
         address _entity,
         uint256 _reputationRatio,
@@ -173,12 +191,13 @@ contract Scoring is AccessControl, IScoring {
         emit EntityScoreUpdated(_entity, initialScore);
     }
 
-    function setFailureRateFactor(uint24 _failureRateFactor) external onlyRole(SCORING_MANAGER_ROLE) {
-        if (_failureRateFactor == 0) revert FailureRateFactorCannotBeZero();
-        if (failureRateFactor == _failureRateFactor) revert FailureRateFactorCannotBeTheSame();
+    function setDecreaseSuccessFactor(uint24 _decreaseSuccessFactor) external onlyRole(SCORING_MANAGER_ROLE) {
+        if (_decreaseSuccessFactor > MAX_RATIO) revert DecreaseSuccessFactorCannotBeGreaterThanMaxRatio();
+        if (decreaseSuccessFactor == _decreaseSuccessFactor) revert DecreaseSuccessFactorCannotBeTheSame();
+        if (_decreaseSuccessFactor == 0) revert DecreaseSuccessFactorCannotBeZero();
 
-        failureRateFactor = _failureRateFactor;
-        emit FailureRateFactorUpdated(_failureRateFactor);
+        decreaseSuccessFactor = _decreaseSuccessFactor;
+        emit DecreaseSuccessFactorUpdated(_decreaseSuccessFactor);
     }
 
     function setPoolSizeWeight(uint24 _poolSizeWeight) external onlyRole(SCORING_MANAGER_ROLE) {
@@ -239,8 +258,8 @@ contract Scoring is AccessControl, IScoring {
         return totalScores == 0 && reputationRatio != 0 && financialHealthRatio != 0;
     }
 
-    function _calculatePenalty(uint256 _failureRate) private pure returns (uint256 penalty) {
-        int256 negativeFailureRate = int256(_failureRate) * -1; // convert to negative number
+    function _calculatePenalty(uint256 _totalFailureRate) private pure returns (uint256 penalty) {
+        int256 negativeFailureRate = int256(_totalFailureRate) * -1; // convert to negative number
         
         // calculate power of exponent
         int128 power = ABDKMath64x64.div(

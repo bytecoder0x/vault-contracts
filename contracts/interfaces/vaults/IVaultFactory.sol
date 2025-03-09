@@ -101,7 +101,9 @@ interface IVaultFactory {
     function setLicenseContract(address _licenseContract) external;
     function setStakingPercentage(uint256 _stakingPercentage) external;
     function getVaultEntity(address _vault) external view returns (address);
-
+    function getLastVaultAddressByEntity(address _entity) external view returns (address);
+    function getVaultsByEntity(address _entity) external view returns (VaultInfo[] memory);
+    function getVaultsCountByEntity(address _entity) external view returns (uint256);
     function getCollateralAmount(address _vault) external view returns (uint256);
     function getRefundableAmount(address _vault) external view returns (uint256);
     function getVault(address _vault) external view returns (VaultInfo memory);

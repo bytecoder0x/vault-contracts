@@ -33,20 +33,24 @@ interface IScoring {
     error PoolSizeWeightCannotBeZero();
     error PoolSizeWeightCannotBeGreaterThanMaxRatio();
     error PoolSizeWeightCannotBeTheSame();
-    error FailureRateFactorCannotBeZero();
-    error FailureRateFactorCannotBeTheSame();
+    error DecreaseSuccessFactorCannotBeZero();
+    error DecreaseSuccessFactorCannotBeGreaterThanMaxRatio();
+    error DecreaseSuccessFactorCannotBeTheSame();
+
 
     event ThresholdCapitalUpdated(uint256 indexed thresholdCapital);
     event ThresholdCollateralUpdated(uint256 indexed thresholdCollateral);
     event MarketConditionRatioUpdated(uint256 indexed marketConditionRatio);
     event EntityScoreUpdated(address indexed entity, uint256 newScore);
+    event EntityScoreUpdatedAfterLiquidation(address indexed entity, uint256 newScore);
     event PoolSizeWeightUpdated(uint24 poolSizeWeight);
-    event FailureRateFactorUpdated(uint24 failureRateFactor);
+    event DecreaseSuccessFactorUpdated(uint24 decreaseSuccessFactor);
     event PerformanceDataUpdated(address indexed entity, uint256 reputationRatio, uint256 financialHealthRatio);
 
     function updateEntityScore() external;
+    function updateEntityScoreAfterLiquidation(uint256 _depositedAmount) external;
     function setInitialScore(address _entity) external;
-    function setFailureRateFactor(uint24 _failureRateFactor) external;
+    function setDecreaseSuccessFactor(uint24 _decreaseSuccessFactor) external;
     function setPoolSizeWeight(uint24 _poolSizeWeight) external;
     function setPerformanceDataBatch(address[] calldata _entities, uint256[] calldata _reputationRatios, uint256[] calldata _financialHealthRatios) external;
     function setPerformanceData(address _entity, uint256 _reputationRatio, uint256 _financialHealthRatio) external;

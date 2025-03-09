@@ -15,8 +15,6 @@ import {IStaking} from "../interfaces/vaults/IStaking.sol";
 contract Vault is Initializable, ERC4626Upgradeable, SwapHandler, IVault {
     using SafeERC20Upgradeable for IERC20Upgradeable;
 
-    uint256 public constant MAX_BIPS = 100_00;
-
     IScoring public SCORING;
     IStaking public STAKING;
     ITreasury public TREASURY;
@@ -32,9 +30,10 @@ contract Vault is Initializable, ERC4626Upgradeable, SwapHandler, IVault {
     uint256 public startTime;
     uint256 public fundingEndTime;
     uint256 public unlockEndTime;
-    uint256 public totalDeposits;
-    uint256 public refundableAmountInGoil;
     uint256 public amountForStaking;
+
+    uint256 public totalDepositsFromUsers;
+    uint256 public totalDepositsFromEntity;
 
     modifier onlyEntity() {
         if (msg.sender != ENTITY) revert OnlyEntityCanCall();
@@ -61,7 +60,6 @@ contract Vault is Initializable, ERC4626Upgradeable, SwapHandler, IVault {
         startTime = _vaultParams.startTime;
         fundingEndTime = _vaultParams.fundingEndTime;
         unlockEndTime = _vaultParams.unlockEndTime;
-        refundableAmountInGoil = _vaultParams.refundableAmountInGoil;
         amountForStaking = _vaultParams.amountForStaking;
     }
 
@@ -87,6 +85,13 @@ contract Vault is Initializable, ERC4626Upgradeable, SwapHandler, IVault {
             GOIL_TOKEN.approve(address(STAKING), stakingAmountInGoil);
             STAKING.depositReward(stakingAmountInGoil);
         }
+
+        if (isVaultLiquidated) {
+            _updateEntityScoreIfPossible(_amountToDeposit);
+            _swap(_amountToDeposit, address(TREASURY), address(GOIL_TOKEN), DEPOSIT_TOKEN);
+        }
+
+        totalDepositsFromEntity += _amountToDeposit;
 
         emit DepositFromEntity(_amountToDeposit);
     }
@@ -159,27 +164,6 @@ contract Vault is Initializable, ERC4626Upgradeable, SwapHandler, IVault {
             && totalAssets() < desiredCap;
     }
 
-    // function _handleSuccessfulVault() private {
-    // }
-
-    // function _handleFailedVault() private {
-    //     uint256 currentBalanceGoil = totalAssets();
-    //     _updateAsset(DEPOSIT_TOKEN);
-
-    //     if (refundableAmountInGoil > currentBalanceGoil) {
-    //         uint256 notWithdrawnGoil = refundableAmountInGoil - currentBalanceGoil;
-    //         uint256 notWithdrawnPercentage = (notWithdrawnGoil * MAX_BIPS) / refundableAmountInGoil;
-
-    //         uint256 depositAmount = (promisedCap * notWithdrawnPercentage) / MAX_BIPS;
-    //         uint256 amountToTreasury = promisedCap - depositAmount;
-
-    //         _swap(amountToTreasury, TREASURY, address(GOIL_TOKEN), DEPOSIT_TOKEN);
-    //         GOIL_TOKEN.transfer(TREASURY, notWithdrawnGoil);
-    //     } else {
-    //         GOIL_TOKEN.transfer(TREASURY, currentBalanceGoil);
-    //     }
-    // }
-
     function _deposit(
         address _caller,
         address _receiver,
@@ -191,6 +175,8 @@ contract Vault is Initializable, ERC4626Upgradeable, SwapHandler, IVault {
         if (currentTime < startTime) revert VaultNotStarted();
         if (currentTime > fundingEndTime) revert VaultFundingTimeIsEnded();
         if (totalAssets() + _assets > desiredCap) revert ExceedsVaultSize();
+
+        totalDepositsFromUsers += _assets;
 
         super._deposit(_caller, _receiver, _assets, _shares);
     }
@@ -231,6 +217,18 @@ contract Vault is Initializable, ERC4626Upgradeable, SwapHandler, IVault {
 
             TREASURY.fundVault();
         }
+    }
+
+    function _updateEntityScoreIfPossible(uint256 _amountToDeposit) private {
+        if (totalDepositsFromEntity >= promisedCap) return;
+
+        // we allow to restore entity's score if entity deposited less than promisedCap
+        uint256 maxAmountForUpdateScore = _amountToDeposit;
+        if (totalDepositsFromEntity + _amountToDeposit > promisedCap) {
+            maxAmountForUpdateScore = promisedCap - totalDepositsFromEntity;
+        }
+
+        SCORING.updateEntityScoreAfterLiquidation(maxAmountForUpdateScore);
     }
 
     function _isContract(address _address) private view returns (bool) {

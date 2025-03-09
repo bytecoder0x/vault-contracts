@@ -120,6 +120,7 @@ contract Treasury is AccessControl, ITreasury {
             collateralAmount = collateral[entity].collateralLocked + collateral[entity].collateralUnlocked;
             collateral[entity].collateralLocked = 0;
             collateral[entity].collateralUnlocked = 0;
+            // TODO: thing about collateral on locked vaults after license expiration
         }
 
         if (collateralAmount == 0) revert NoCollateralToWithdraw();
