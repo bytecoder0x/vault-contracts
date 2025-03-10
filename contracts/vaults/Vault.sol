@@ -77,13 +77,14 @@ contract Vault is Initializable, ERC4626Upgradeable, SwapHandler, IVault {
         IERC20Upgradeable(asset()).safeTransferFrom(msg.sender, address(this), _amountToDeposit);
 
         if (totalAssets() >= promisedCap && !isVaultLiquidated) {
-            SCORING.updateEntityScore();
             isVaultSuccess = true;
             unlockEndTime = block.timestamp;
 
             uint256 stakingAmountInGoil = _swap(amountForStaking, address(this), address(GOIL_TOKEN), DEPOSIT_TOKEN);
             GOIL_TOKEN.approve(address(STAKING), stakingAmountInGoil);
             STAKING.depositReward(stakingAmountInGoil);
+
+            SCORING.updateEntityScore();
         }
 
         if (isVaultLiquidated) {

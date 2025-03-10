@@ -18,10 +18,8 @@ contract VaultFactory is AccessControl, IVaultFactory {
 
     bytes32 public constant VAULT_MANAGER_ROLE = keccak256("VAULT_MANAGER_ROLE");
 
-    uint256 public constant MAX_BIPS = 100_00;
-    uint256 public constant COLLATERAL_PERCENTAGE = 10_00;
-
     uint256 public constant VAULT_EXPIRY_LIMIT_AFTER_LICENSE = 2628000; // ~ 30.42 days it is more accurate in seconds;
+    uint256 public constant MAX_BIPS = 100_00;
 
     IOracle public immutable ORACLE;
     address public immutable VAULT_IMPLEMENTATION = address(new Vault());

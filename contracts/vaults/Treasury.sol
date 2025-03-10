@@ -113,14 +113,13 @@ contract Treasury is AccessControl, ITreasury {
         address entity = msg.sender;
         uint256 collateralAmount;
 
-        if (LICENSE.getLicenseIsActive(entity)) {
+        if (LICENSE.getLicenseExpirationTime(entity) + VAULT_FACTORY.VAULT_EXPIRY_LIMIT_AFTER_LICENSE() >= block.timestamp) {
             collateralAmount = collateral[entity].collateralUnlocked;
             collateral[entity].collateralUnlocked = 0;
         } else {
             collateralAmount = collateral[entity].collateralLocked + collateral[entity].collateralUnlocked;
             collateral[entity].collateralLocked = 0;
             collateral[entity].collateralUnlocked = 0;
-            // TODO: thing about collateral on locked vaults after license expiration
         }
 
         if (collateralAmount == 0) revert NoCollateralToWithdraw();
@@ -143,6 +142,7 @@ contract Treasury is AccessControl, ITreasury {
     }
 
     function fundVault() external onlyVault withSetupNecessaryContracts {
+        // TODO: think about partial funding from entity's , thinks how do implement here
         address vault = msg.sender;
 
         address entity = IVault(vault).ENTITY();

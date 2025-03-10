@@ -4,7 +4,7 @@ pragma solidity ^0.8.27;
 import {IOracle} from "./IOracle.sol";
 import {ITreasury} from "./ITreasury.sol";
 import {IScoring} from "./IScoring.sol";
-
+import {ILicense} from "./ILicense.sol";
 interface IVaultFactory {
     error AdminCannotBeZeroAddress();
     error OracleMustBeContract();
@@ -65,8 +65,9 @@ interface IVaultFactory {
     function ORACLE() external view returns (IOracle);
     function TREASURY() external view returns (ITreasury);
     function SCORING() external view returns (IScoring);
+    function LICENSE() external view returns (ILicense);
+    function VAULT_EXPIRY_LIMIT_AFTER_LICENSE() external view returns (uint256);
     function MAX_BIPS() external view returns (uint256);
-    function COLLATERAL_PERCENTAGE() external view returns (uint256);
     function stakingPercentage() external view returns (uint256);
     function isVault(address _vault) external view returns (bool);
     function isDepositToken(address _depositToken) external view returns (bool);
