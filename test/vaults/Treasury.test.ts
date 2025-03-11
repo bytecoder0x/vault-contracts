@@ -6,7 +6,7 @@ import { expect } from "chai";
 import { ethers } from "hardhat";
 import { APPLICATION_FEE, LICENSE_MONTHLY_FEE, DEFAULT_VAULT_PARAMS } from "../constants";
 
-describe.only("GoilTreasury", function () {
+describe("GoilTreasury", function () {
 	let treasury: Treasury;
 	let vaultFactory: VaultFactory;
 	let license: License;

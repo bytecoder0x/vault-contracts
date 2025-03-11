@@ -4,13 +4,14 @@ pragma solidity ^0.8.27;
 import {ERC4626Upgradeable} from "./ERC4626/ERC4626Upgradeable.sol";
 import {Initializable} from "@openzeppelin/contracts-upgradeable/proxy/utils/Initializable.sol";
 import {SafeERC20Upgradeable} from "@openzeppelin/contracts-upgradeable/token/ERC20/utils/SafeERC20Upgradeable.sol";
-import {SwapHandler} from "../components/SwapHandler.sol";
+import {SwapHandler} from "./components/SwapHandler.sol";
 
 import {IERC20Upgradeable} from "@openzeppelin/contracts-upgradeable/token/ERC20/IERC20Upgradeable.sol";
 import {IVault} from "../interfaces/vaults/IVault.sol";
 import {IScoring} from "../interfaces/vaults/IScoring.sol";
 import {ITreasury} from "../interfaces/vaults/ITreasury.sol";
 import {IStaking} from "../interfaces/vaults/IStaking.sol";
+import {console} from "hardhat/console.sol";
 
 contract Vault is Initializable, ERC4626Upgradeable, SwapHandler, IVault {
     using SafeERC20Upgradeable for IERC20Upgradeable;
@@ -19,7 +20,7 @@ contract Vault is Initializable, ERC4626Upgradeable, SwapHandler, IVault {
     IStaking public STAKING;
     ITreasury public TREASURY;
     IERC20Upgradeable public GOIL_TOKEN;
-    address public DEPOSIT_TOKEN;
+    IERC20Upgradeable public DEPOSIT_TOKEN;
     address public ENTITY;
 
     bool public isVaultSuccess;
@@ -52,7 +53,7 @@ contract Vault is Initializable, ERC4626Upgradeable, SwapHandler, IVault {
         SCORING = IScoring(_vaultParams.scoring);
         STAKING = IStaking(_vaultParams.staking);
         GOIL_TOKEN = IERC20Upgradeable(_vaultParams.goilToken);
-        DEPOSIT_TOKEN = _vaultParams.depositToken;
+        DEPOSIT_TOKEN = IERC20Upgradeable(_vaultParams.depositToken);
         TREASURY = ITreasury(_vaultParams.treasury);
         ENTITY = _vaultParams.entity;
         desiredCap = _vaultParams.desiredCap;
@@ -74,13 +75,13 @@ contract Vault is Initializable, ERC4626Upgradeable, SwapHandler, IVault {
     function depositFromEntity(uint256 _amountToDeposit) external onlyEntity {
         if (block.timestamp <= fundingEndTime) revert FundingEndTimeIsNotReached();
 
-        IERC20Upgradeable(asset()).safeTransferFrom(msg.sender, address(this), _amountToDeposit);
+        DEPOSIT_TOKEN.safeTransferFrom(msg.sender, address(this), _amountToDeposit);
 
         if (totalAssets() >= promisedCap && !isVaultLiquidated) {
             isVaultSuccess = true;
             unlockEndTime = block.timestamp;
 
-            uint256 stakingAmountInGoil = _swap(amountForStaking, address(this), address(GOIL_TOKEN), DEPOSIT_TOKEN);
+            uint256 stakingAmountInGoil = _swap(amountForStaking, address(this), address(GOIL_TOKEN), address(DEPOSIT_TOKEN));
             GOIL_TOKEN.approve(address(STAKING), stakingAmountInGoil);
             STAKING.depositReward(stakingAmountInGoil);
 
@@ -89,7 +90,7 @@ contract Vault is Initializable, ERC4626Upgradeable, SwapHandler, IVault {
 
         if (isVaultLiquidated) {
             _updateEntityScoreIfPossible(_amountToDeposit);
-            _swap(_amountToDeposit, address(TREASURY), address(GOIL_TOKEN), DEPOSIT_TOKEN);
+            _swap(_amountToDeposit, address(TREASURY), address(GOIL_TOKEN), address(DEPOSIT_TOKEN));
         }
 
         totalDepositsFromEntity += _amountToDeposit;
@@ -208,7 +209,7 @@ contract Vault is Initializable, ERC4626Upgradeable, SwapHandler, IVault {
         uint256 totalAsset = totalAssets();
         if (desiredCap > totalAsset) {
             if (totalAsset > 0) {
-                _swap(totalAsset, address(TREASURY), address(GOIL_TOKEN), DEPOSIT_TOKEN);
+                _swap(totalAsset, address(TREASURY), address(GOIL_TOKEN), address(DEPOSIT_TOKEN));
             }
 
             //! _tryGetAssetDecimals, _asset and _underlyingDecimals in ERC4626Upgradeable must be internal for this case
@@ -228,7 +229,7 @@ contract Vault is Initializable, ERC4626Upgradeable, SwapHandler, IVault {
         if (totalDepositsFromEntity + _amountToDeposit > promisedCap) {
             maxAmountForUpdateScore = promisedCap - totalDepositsFromEntity;
         }
-
+        
         SCORING.updateEntityScoreAfterLiquidation(maxAmountForUpdateScore);
     }
 
