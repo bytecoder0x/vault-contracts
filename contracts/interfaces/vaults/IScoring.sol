@@ -2,61 +2,27 @@
 pragma solidity ^0.8.27;
 
 interface IScoring {
-    struct PerformanceData {
-        uint256 reputationRatio;
-        uint256 financialHealthRatio;
+    struct ScoreDetails {
+        uint256 score; 
+        uint256 poolSize; // pool size that need for recalculating pool size ratio
+        uint256 totalFails; // total fails on that moment when score was set, penalty based on this value
+        bool isVaultFailed;
     }
 
-    error AdminCannotBeZeroAddress();
-    error ThresholdCapitalCannotBeZero();
-    error ThresholdCollateralCannotBeZero();
     error TreasuryMustBeContract();
     error VaultFactoryMustBeContract();
     error GoilTokenMustBeContract();
     error LicenseMustBeContract();
-    error InvalidReputationRatio();
-    error InvalidFinancialHealthRatio();
-    error InvalidMarketConditionRatio();
-    error InvalidDataLength();
-    error ThresholdCapitalCannotBeTheSame();
-    error ThresholdCollateralCannotBeTheSame();
-    error ReputationRatioCannotBeTheSame();
-    error FinancialHealthRatioCannotBeTheSame();
-    error MarketConditionRatioCannotBeTheSame();
-    error PoolSizeCannotBeGreaterThanMaxPoolSize();
-    error EntityCannotBeZeroAddress();
-    error PerformanceDataAlreadySet();
     error LicenseIsNotPending();
-    error IncorrectWeights();
     error OnlyVault();
     error OnlyManagerOrLicense();
-    error PoolSizeWeightCannotBeZero();
-    error PoolSizeWeightCannotBeGreaterThanMaxRatio();
-    error PoolSizeWeightCannotBeTheSame();
-    error DecreaseSuccessFactorCannotBeZero();
-    error DecreaseSuccessFactorCannotBeGreaterThanMaxRatio();
-    error DecreaseSuccessFactorCannotBeTheSame();
 
-
-    event ThresholdCapitalUpdated(uint256 indexed thresholdCapital);
-    event ThresholdCollateralUpdated(uint256 indexed thresholdCollateral);
-    event MarketConditionRatioUpdated(uint256 indexed marketConditionRatio);
     event EntityScoreUpdated(address indexed entity, uint256 newScore);
     event EntityScoreUpdatedAfterLiquidation(address indexed entity, uint256 newScore);
-    event PoolSizeWeightUpdated(uint24 poolSizeWeight);
-    event DecreaseSuccessFactorUpdated(uint24 decreaseSuccessFactor);
-    event PerformanceDataUpdated(address indexed entity, uint256 reputationRatio, uint256 financialHealthRatio);
 
     function updateEntityScore() external;
     function updateEntityScoreAfterLiquidation(uint256 _depositedAmount) external;
     function setInitialScore(address _entity) external;
-    function setDecreaseSuccessFactor(uint24 _decreaseSuccessFactor) external;
-    function setPoolSizeWeight(uint24 _poolSizeWeight) external;
-    function setPerformanceDataBatch(address[] calldata _entities, uint256[] calldata _reputationRatios, uint256[] calldata _financialHealthRatios) external;
-    function setPerformanceData(address _entity, uint256 _reputationRatio, uint256 _financialHealthRatio) external;
-    function setThresholdCollateral(uint256 _thresholdCollateral) external;
-    function setThresholdCapital(uint256 _thresholdCapital) external;
-    function setMarketConditionRatio(uint256 _marketConditionRatio) external;
     function isReadyToSetInitialScore(address _entity) external view returns (bool);
     function getMaxPoolSize(address _entity) external view returns (uint256 maxPoolSize);
     function getScores(address _entity) external view returns (uint256[] memory scores);

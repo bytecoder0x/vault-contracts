@@ -1,8 +1,8 @@
 // SPDX-License-Identifier: UNLICENSED
 pragma solidity ^0.8.27;
 
+import {ScoringManager} from "./components/ScoringManager.sol";
 import {ABDKMath64x64} from "abdk-libraries-solidity/ABDKMath64x64.sol";
-import {AccessControl} from "@openzeppelin/contracts/access/AccessControl.sol";
 import {IERC20} from "@openzeppelin/contracts/token/ERC20/IERC20.sol";
 import {IVaultFactory} from "../interfaces/vaults/IVaultFactory.sol";
 import {IVault} from "../interfaces/vaults/IVault.sol";
@@ -12,11 +12,9 @@ import {ILicense} from "../interfaces/vaults/ILicense.sol";
 
 import {console} from "hardhat/console.sol";
 
-contract Scoring is AccessControl, IScoring {
-    bytes32 public constant SCORING_MANAGER_ROLE = keccak256("SCORING_MANAGER_ROLE");
-
+contract Scoring is ScoringManager, IScoring {
+    // max ratio is 100_000 (in scoring manager)
     uint24 public constant SCORE_PRECISION = 100_000;
-    uint24 public constant MAX_RATIO = 100_000;
 
     uint16 public constant TOKENS_COLLATERAL_WEIGHT = 40_000;
     uint16 public constant REPUTATION_WEIGHT = 20_000;
@@ -32,23 +30,6 @@ contract Scoring is AccessControl, IScoring {
     ITreasury public immutable TREASURY;
     ILicense public immutable LICENSE;
     IVaultFactory public immutable VAULT_FACTORY;
-
-    // if entity repay after liquidation, success rate based on paid amount will be multiplied by this factor
-    uint24 public decreaseSuccessFactor = 80_000; // firstly is 0.8 (with precision 100_000)
-    uint24 public poolSizeWeight = 10_000; // 0.1 (10%) its means that score cannot be increased by more than 10%
-
-    uint256 public thresholdCapital;
-    uint256 public thresholdCollateral;
-    uint256 public marketConditionRatio;
-
-    mapping(address => PerformanceData) public performanceData; // reputation ratio and financial health ratio
-
-    struct ScoreDetails {
-        uint256 score; 
-        uint256 poolSize; // pool size that need for recalculating pool size ratio
-        uint256 totalFails; // total fails on that moment when score was set, penalty based on this value
-        bool isVaultFailed;
-    }
 
     mapping(uint256 => ScoreDetails) public scoresDetails; // id -> info about score
     mapping(address => uint256) public scoresIds; // vault -> id of score
@@ -74,33 +55,23 @@ contract Scoring is AccessControl, IScoring {
         uint256 _thresholdCapital,
         uint256 _thresholdCollateral,
         uint256 _marketConditionRatio
-    ) {
+    ) ScoringManager(_admin, _thresholdCapital, _thresholdCollateral, _marketConditionRatio) {
         if (!_isContract(_vaultFactory)) revert VaultFactoryMustBeContract();
         if (!_isContract(_goilToken)) revert GoilTokenMustBeContract();
         if (!_isContract(_treasury)) revert TreasuryMustBeContract();
         if (!_isContract(_license)) revert LicenseMustBeContract();
-        if (_admin == address(0)) revert AdminCannotBeZeroAddress();
-        if (_thresholdCapital == 0) revert ThresholdCapitalCannotBeZero();
-        if (_thresholdCollateral == 0) revert ThresholdCollateralCannotBeZero();
-        if (_marketConditionRatio > MAX_RATIO || _marketConditionRatio == 0) revert InvalidMarketConditionRatio();
 
         VAULT_FACTORY = IVaultFactory(_vaultFactory);
         GOIL_TOKEN = IERC20(_goilToken);
         TREASURY = ITreasury(_treasury);
         LICENSE = ILicense(_license);
-        thresholdCapital = _thresholdCapital;
-        thresholdCollateral = _thresholdCollateral;
-        marketConditionRatio = _marketConditionRatio;
-
-        _grantRole(DEFAULT_ADMIN_ROLE, _admin);
-        _grantRole(SCORING_MANAGER_ROLE, _admin);
     }
 
     function updateEntityScore() external onlyVault {
         IVault vault = IVault(msg.sender);
+
         bool isVaultFailed = !vault.isVaultSuccess();
         address entity = vault.ENTITY();
-
         uint256 poolSize = vault.desiredCap();
         
         uint256[] storage entityScores = scores[entity];
@@ -159,79 +130,19 @@ contract Scoring is AccessControl, IScoring {
         entityScores[indexOfScore] = updatedScore;
         totalFails[entity] -= successRate;
 
-        // example: we have 10 scores and current score with id 6 (indexOfScore = 5) 
-        // so we need to update scores from 6 to 10 (with id 6 already updated). 10 - 5 - 1 = 4
-        uint256 totalScoresToUpdate = totalScores - indexOfScore - 1;
-        for (uint256 i = 0; i < totalScoresToUpdate; ) {
-            uint256 currentScoreId = scoreId + i + 1;
-            uint256 currentIndexOfScore = currentScoreId - 1;
-
-            ScoreDetails storage currentScoreDetails = scoresDetails[currentScoreId];
-            
-            uint256[] memory historyScore = _getCurrentHistoricalScores(entityScores, currentIndexOfScore);
-            uint256 newHistoricalPerformance = _calculateHistoricalPerformance(historyScore);
-
-            uint256 lastScore = scoresDetails[currentScoreId - 1].score;
-            uint256 poolSizeRatio = (currentScoreDetails.poolSize * poolSizeWeight) / (lastScore * thresholdCapital / SCORE_PRECISION); // pool size div max pool size
-            uint256 currentUpdatedScore = (lastScore + poolSizeRatio * newHistoricalPerformance / SCORE_PRECISION);
-
-            if (currentScoreDetails.isVaultFailed) {
-                currentUpdatedScore = currentUpdatedScore * _calculatePenalty(currentScoreDetails.totalFails - successRate) / SCORE_PRECISION;
-            }
-
-            if (currentUpdatedScore > MAX_RATIO) {
-                currentUpdatedScore = MAX_RATIO;
-            }
-
-            currentScoreDetails.totalFails -= successRate;
-            currentScoreDetails.score = currentUpdatedScore;
-            entityScores[currentIndexOfScore] = currentUpdatedScore;
-            
-            unchecked {
-                i++;
-            }
-        }
+        _updateHistoricalScores(entityScores, scoreId, indexOfScore, totalScores, successRate);
     }
     
     function setPerformanceData(
         address _entity,
         uint256 _reputationRatio,
         uint256 _financialHealthRatio
-    ) public onlyRole(SCORING_MANAGER_ROLE) {
-        uint256 reputationRatio = performanceData[_entity].reputationRatio;
-        uint256 financialHealthRatio = performanceData[_entity].financialHealthRatio;
-
-        if (_entity == address(0)) revert EntityCannotBeZeroAddress();
-        if (reputationRatio != 0 || financialHealthRatio != 0) revert PerformanceDataAlreadySet();
-        if (_reputationRatio > MAX_RATIO || _reputationRatio == 0) revert InvalidReputationRatio();
-        if (_financialHealthRatio > MAX_RATIO || _financialHealthRatio == 0) revert InvalidFinancialHealthRatio();
-
-        performanceData[_entity] = PerformanceData({
-            reputationRatio: _reputationRatio,
-            financialHealthRatio: _financialHealthRatio
-        });
-
-        if (LICENSE.getLicenseIsActive(_entity)) setInitialScore(_entity);
-
-        emit PerformanceDataUpdated(_entity, _reputationRatio, _financialHealthRatio);
-    }
-
-    function setPerformanceDataBatch(
-        address[] calldata _entities,
-        uint256[] calldata _reputationRatios,
-        uint256[] calldata _financialHealthRatios
-    ) public onlyRole(SCORING_MANAGER_ROLE) {
-        if (_entities.length != _reputationRatios.length || _entities.length != _financialHealthRatios.length) {
-            revert InvalidDataLength();
+    ) public override onlyRole(SCORING_MANAGER_ROLE) {
+        if (LICENSE.getLicenseIsActive(_entity)) {
+            setInitialScore(_entity);
         }
 
-        uint256 entitiesLength = _entities.length;
-        for (uint256 i = 0; i < entitiesLength; ) {
-            setPerformanceData(_entities[i], _reputationRatios[i], _financialHealthRatios[i]);
-            unchecked {
-                i++;
-            }
-        }
+        super.setPerformanceData(_entity, _reputationRatio, _financialHealthRatio);
     }
 
     function setInitialScore(address _entity) public onlyManagerOrLicense {
@@ -253,48 +164,6 @@ contract Scoring is AccessControl, IScoring {
         scores[_entity].push(initialScore);
 
         emit EntityScoreUpdated(_entity, initialScore);
-    }
-
-    function setDecreaseSuccessFactor(uint24 _decreaseSuccessFactor) external onlyRole(SCORING_MANAGER_ROLE) {
-        if (_decreaseSuccessFactor > MAX_RATIO) revert DecreaseSuccessFactorCannotBeGreaterThanMaxRatio();
-        if (decreaseSuccessFactor == _decreaseSuccessFactor) revert DecreaseSuccessFactorCannotBeTheSame();
-        if (_decreaseSuccessFactor == 0) revert DecreaseSuccessFactorCannotBeZero();
-
-        decreaseSuccessFactor = _decreaseSuccessFactor;
-        emit DecreaseSuccessFactorUpdated(_decreaseSuccessFactor);
-    }
-
-    function setPoolSizeWeight(uint24 _poolSizeWeight) external onlyRole(SCORING_MANAGER_ROLE) {
-        if (_poolSizeWeight > MAX_RATIO) revert PoolSizeWeightCannotBeGreaterThanMaxRatio();
-        if (poolSizeWeight == _poolSizeWeight) revert PoolSizeWeightCannotBeTheSame();
-        if (_poolSizeWeight == 0) revert PoolSizeWeightCannotBeZero();
-
-        poolSizeWeight = _poolSizeWeight;
-        emit PoolSizeWeightUpdated(_poolSizeWeight);
-    }
-
-    function setThresholdCollateral(uint256 _thresholdCollateral) external onlyRole(SCORING_MANAGER_ROLE) {
-        if (_thresholdCollateral == 0) revert ThresholdCollateralCannotBeZero();
-        if (thresholdCollateral == _thresholdCollateral) revert ThresholdCollateralCannotBeTheSame();
-
-        thresholdCollateral = _thresholdCollateral;
-        emit ThresholdCollateralUpdated(_thresholdCollateral);
-    }
-
-    function setThresholdCapital(uint256 _thresholdCapital) external onlyRole(SCORING_MANAGER_ROLE) {
-        if (_thresholdCapital == 0) revert ThresholdCapitalCannotBeZero();
-        if (thresholdCapital == _thresholdCapital) revert ThresholdCapitalCannotBeTheSame();
-
-        thresholdCapital = _thresholdCapital;
-        emit ThresholdCapitalUpdated(_thresholdCapital);
-    }
-
-    function setMarketConditionRatio(uint256 _marketConditionRatio) external onlyRole(SCORING_MANAGER_ROLE) {
-        if (_marketConditionRatio > MAX_RATIO || _marketConditionRatio == 0) revert InvalidMarketConditionRatio();
-        if (marketConditionRatio == _marketConditionRatio) revert MarketConditionRatioCannotBeTheSame();
-
-        marketConditionRatio = _marketConditionRatio;
-        emit MarketConditionRatioUpdated(_marketConditionRatio);
     }
 
     function getScores(address _entity) public view returns (uint256[] memory) {
@@ -320,6 +189,48 @@ contract Scoring is AccessControl, IScoring {
         uint256 totalScores = scores[_entity].length;
         
         return totalScores == 0 && reputationRatio != 0 && financialHealthRatio != 0;
+    }
+
+    function _updateHistoricalScores(
+        uint256[] storage entityScores,
+        uint256 scoreId,
+        uint256 indexOfScore,
+        uint256 totalScores,
+        uint256 successRate
+    ) private {
+        // example: we have 10 scores and current score with id 6 (indexOfScore = 5) 
+        // so we need to update scores from 6 to 10 (with id 6 already updated). 10 - 5 - 1 = 4
+        uint256 totalScoresToUpdate = totalScores - indexOfScore - 1;
+
+        for (uint256 i = 0; i < totalScoresToUpdate; ) {
+            uint256 currentScoreId = scoreId + i + 1;
+            uint256 currentIndexOfScore = currentScoreId - 1;
+
+            ScoreDetails storage currentScoreDetails = scoresDetails[currentScoreId];
+            
+            uint256[] memory historyScore = _getCurrentHistoricalScores(entityScores, currentIndexOfScore);
+            uint256 newHistoricalPerformance = _calculateHistoricalPerformance(historyScore);
+
+            uint256 lastScore = scoresDetails[currentScoreId - 1].score;
+            uint256 poolSizeRatio = (currentScoreDetails.poolSize * poolSizeWeight) / (lastScore * thresholdCapital / SCORE_PRECISION);
+            uint256 currentUpdatedScore = (lastScore + poolSizeRatio * newHistoricalPerformance / SCORE_PRECISION);
+
+            if (currentScoreDetails.isVaultFailed) {
+                currentUpdatedScore = currentUpdatedScore * _calculatePenalty(currentScoreDetails.totalFails - successRate) / SCORE_PRECISION;
+            }
+
+            if (currentUpdatedScore > MAX_RATIO) {
+                currentUpdatedScore = MAX_RATIO;
+            }
+
+            currentScoreDetails.totalFails -= successRate;
+            currentScoreDetails.score = currentUpdatedScore;
+            entityScores[currentIndexOfScore] = currentUpdatedScore;
+            
+            unchecked {
+                i++;
+            }
+        }
     }
 
     function _calculatePenalty(uint256 _totalFailureRate) private pure returns (uint256 penalty) {
@@ -380,13 +291,5 @@ contract Scoring is AccessControl, IScoring {
         }
 
         return historyScores;
-    }
-
-    function _isContract(address _address) private view returns (bool) {
-        uint32 size;
-        assembly {
-            size := extcodesize(_address)
-        }
-        return (size > 0);
     }
 }

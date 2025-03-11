@@ -8,7 +8,7 @@ import {IUniswapV2Router01} from "@uniswap/v2-periphery/contracts/interfaces/IUn
 import {ISwapRouter} from "@uniswap/v3-periphery/contracts/interfaces/ISwapRouter.sol";
 import {IQuoterV2} from "@uniswap/v3-periphery/contracts/interfaces/IQuoterV2.sol";
 
-import {ISwapHandler} from "../interfaces/common/ISwapHandler.sol";
+import {ISwapHandler} from "../../interfaces/vaults/components/ISwapHandler.sol";
 
 abstract contract SwapHandler is Initializable, ISwapHandler {
     uint256 public constant BASIS_POINTS = 100_00;
