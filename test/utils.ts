@@ -18,7 +18,7 @@ import { Treasury, VaultFactory } from "../typechain-types";
 import { MockERC20 } from "../typechain-types";
 import { HardhatEthersSigner } from "@nomicfoundation/hardhat-ethers/signers";
 export const deployAllContracts = async () => {
-	const [admin, entity, user1, user2, user3, user4] = await ethers.getSigners();
+	const [admin, entity, entity2, user1, user2, user3, user4] = await ethers.getSigners();
 	const MockERC20Factory = await ethers.getContractFactory("MockERC20");
 
 	const goilToken = await MockERC20Factory.deploy(INITIAL_SUPPLY);
@@ -116,6 +116,7 @@ export const deployAllContracts = async () => {
 	return {
 		admin,
 		entity,
+		entity2,
 		user1,
 		user2,
 		user3,

@@ -10,8 +10,6 @@ import {ITreasury} from "../interfaces/vaults/ITreasury.sol";
 import {IScoring} from "../interfaces/vaults/IScoring.sol";
 import {ILicense} from "../interfaces/vaults/ILicense.sol";
 
-import {console} from "hardhat/console.sol";
-
 contract Scoring is ScoringManager, IScoring {
     // max ratio is 100_000 (in scoring manager)
     uint24 public constant SCORE_PRECISION = 100_000;
@@ -138,11 +136,11 @@ contract Scoring is ScoringManager, IScoring {
         uint256 _reputationRatio,
         uint256 _financialHealthRatio
     ) public override onlyRole(SCORING_MANAGER_ROLE) {
+        super.setPerformanceData(_entity, _reputationRatio, _financialHealthRatio);
+
         if (LICENSE.getLicenseIsActive(_entity)) {
             setInitialScore(_entity);
         }
-
-        super.setPerformanceData(_entity, _reputationRatio, _financialHealthRatio);
     }
 
     function setInitialScore(address _entity) public onlyManagerOrLicense {

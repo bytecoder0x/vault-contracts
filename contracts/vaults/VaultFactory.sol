@@ -13,6 +13,8 @@ import {IScoring} from "../interfaces/vaults/IScoring.sol";
 import {IOracle} from "../interfaces/vaults/IOracle.sol";
 import {IStaking} from "../interfaces/vaults/IStaking.sol";
 
+import {console} from "hardhat/console.sol";
+
 contract VaultFactory is AccessControl, IVaultFactory {
     using Clones for address;
 
@@ -110,7 +112,7 @@ contract VaultFactory is AccessControl, IVaultFactory {
         if (unlockEndTime > maxAllowedUnlockPeriod) revert UnlockPeriodTooLong();
 
         uint256 maxPoolSize = SCORING.getMaxPoolSize(msg.sender);
-        uint256 maxAllowedPoolSize = _desiredCap + (_interestRate * _lockPeriod) / MAX_BIPS;
+        uint256 maxAllowedPoolSize = _desiredCap + (_interestRate * _lockPeriod) / MAX_BIPS; // TODO: update with Mc value
         uint256 promisedCap = (_desiredCap * (MAX_BIPS + _interestRate)) / MAX_BIPS;
 
         if (_desiredCap > maxPoolSize) revert NooAllowedPoolSize();
