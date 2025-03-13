@@ -1,27 +1,18 @@
 // SPDX-License-Identifier: UNLICENSED
 pragma solidity ^0.8.27;
 
-import {AccessControl} from "@openzeppelin/contracts/access/AccessControl.sol";
+import {VaultFactoryManager} from "./components/VaultFactoryManager.sol";
 import {Clones} from "@openzeppelin/contracts/proxy/Clones.sol";
+import {IVault} from "../interfaces/vaults/IVault.sol";
 import {Vault} from "./Vault.sol";
 
 import {IVaultFactory} from "../interfaces/vaults/IVaultFactory.sol";
-import {IVault} from "../interfaces/vaults/IVault.sol";
-import {ITreasury} from "../interfaces/vaults/ITreasury.sol";
-import {ILicense} from "../interfaces/vaults/ILicense.sol";
-import {IScoring} from "../interfaces/vaults/IScoring.sol";
 import {IOracle} from "../interfaces/vaults/IOracle.sol";
-import {IStaking} from "../interfaces/vaults/IStaking.sol";
 
-import {console} from "hardhat/console.sol";
-
-contract VaultFactory is AccessControl, IVaultFactory {
+contract VaultFactory is VaultFactoryManager, IVaultFactory {
     using Clones for address;
 
-    bytes32 public constant VAULT_MANAGER_ROLE = keccak256("VAULT_MANAGER_ROLE");
-
     uint256 public constant VAULT_EXPIRY_LIMIT_AFTER_LICENSE = 2628000; // ~ 30.42 days it is more accurate in seconds;
-    uint256 public constant MAX_BIPS = 100_00;
 
     IOracle public immutable ORACLE;
     address public immutable VAULT_IMPLEMENTATION = address(new Vault());
@@ -31,20 +22,11 @@ contract VaultFactory is AccessControl, IVaultFactory {
     address public immutable ROUTER_V2;
     address public immutable QUOTER;
 
-    ITreasury public TREASURY;
-    ILicense public LICENSE;
-    IScoring public SCORING;
-    IStaking public STAKING;
-
-    uint256 public stakingPercentage = 1_00;
-
-    address[] public depositTokens;
     VaultInfo[] public allVaults;
 
     mapping(address => VaultInfo[]) public vaultsByEntity;
     mapping(address => VaultInfo) public vaults;
     mapping(address => bool) public isVault;
-    mapping(address => bool) public isDepositToken;
 
     modifier withExistingDepositToken(address _depositToken) {
         if (!isDepositToken[_depositToken]) revert DepositTokenDoesNotExist();
@@ -67,28 +49,19 @@ contract VaultFactory is AccessControl, IVaultFactory {
         address _routerV3,
         address _quoter,
         address[] memory _depositTokens
-    ) {
+    ) VaultFactoryManager(_admin, _depositTokens) {
         if (_admin == address(0)) revert AdminCannotBeZeroAddress();
         if (!_isContract(_oracle)) revert OracleMustBeContract();
+        if (!_isContract(_goilToken)) revert GoilTokenMustBeContract();
         if (!_isContract(_routerV2)) revert RouterV2MustBeContract();
         if (!_isContract(_routerV3)) revert RouterV3MustBeContract();
         if (!_isContract(_quoter)) revert QuoterMustBeContract();
-        if (_depositTokens.length == 0) revert DepositTokensCannotBeZero();
-
-        for (uint256 i = 0; i < _depositTokens.length; i++) {
-            if (!_isContract(_depositTokens[i])) revert DepositTokenMustBeContract();
-            depositTokens.push(_depositTokens[i]);
-            isDepositToken[_depositTokens[i]] = true;
-        }
         
         ORACLE = IOracle(_oracle);
         GOIL_TOKEN = _goilToken;
         ROUTER_V2 = _routerV2;
         ROUTER_V3 = _routerV3;
         QUOTER = _quoter;
-
-        _grantRole(DEFAULT_ADMIN_ROLE, _admin);
-        _grantRole(VAULT_MANAGER_ROLE, _admin);
     }
 
     function createVault(
@@ -111,12 +84,12 @@ contract VaultFactory is AccessControl, IVaultFactory {
         uint256 maxAllowedUnlockPeriod = LICENSE.getLicenseExpirationTime(msg.sender) + VAULT_EXPIRY_LIMIT_AFTER_LICENSE;
         if (unlockEndTime > maxAllowedUnlockPeriod) revert UnlockPeriodTooLong();
 
-        uint256 maxPoolSize = SCORING.getMaxPoolSize(msg.sender);
-        uint256 maxAllowedPoolSize = _desiredCap + (_interestRate * _lockPeriod) / MAX_BIPS; // TODO: update with Mc value
+        uint256 maxPossiblePoolSize = SCORING.getMaxPossiblePoolSize(msg.sender);
+        uint256 maxAllowedPoolSize = _desiredCap + (_interestRate * _lockPeriod) / MAX_BIPS;
         uint256 promisedCap = (_desiredCap * (MAX_BIPS + _interestRate)) / MAX_BIPS;
 
-        if (_desiredCap > maxPoolSize) revert NooAllowedPoolSize();
-        if (maxPoolSize < maxAllowedPoolSize) revert HighInterestRate();
+        if (_desiredCap > maxPossiblePoolSize) revert NooAllowedPoolSize();
+        if (maxPossiblePoolSize < maxAllowedPoolSize) revert HighInterestRate();
 
         uint256 refundableAmount = ORACLE.getPaymentAmountForTokens(_desiredCap);
         uint256 requiredCollateral = TREASURY.getRequiredCollateral(_desiredCap);
@@ -163,76 +136,9 @@ contract VaultFactory is AccessControl, IVaultFactory {
         vaults[address(vault)] = newVault;
         allVaults.push(newVault);
         
-        TREASURY.depositCollateral(msg.sender, requiredCollateral, refundableAmount);
+        TREASURY.depositCollateral(msg.sender, requiredCollateral, refundableAmount, _desiredCap);
 
         emit VaultCreated(address(vault), msg.sender, newVault);
-    }
-
-    function addDepositToken(address _depositToken) public onlyRole(VAULT_MANAGER_ROLE) {
-        if (!_isContract(_depositToken)) revert DepositTokenMustBeContract();
-        if (isDepositToken[_depositToken]) revert DepositTokenAlreadyExists();
-
-        isDepositToken[_depositToken] = true;
-        depositTokens.push(_depositToken);
-        emit DepositTokenAdded(_depositToken);
-    }
-
-    function removeDepositToken(address _depositToken) public onlyRole(VAULT_MANAGER_ROLE) {
-        uint256 totalDepositTokens = depositTokens.length;
-        if (totalDepositTokens == 1) revert CannotRemoveLastDepositToken();
-        if (!isDepositToken[_depositToken]) revert DepositTokenDoesNotExist();
-
-        isDepositToken[_depositToken] = false;
-        for (uint256 i = 0; i < totalDepositTokens; i++) {
-            if (depositTokens[i] == _depositToken) {
-                depositTokens[i] = depositTokens[totalDepositTokens - 1];
-                depositTokens.pop();
-                break;
-            }
-        }
-
-        emit DepositTokenRemoved(_depositToken);
-    }
-
-    function setStakingPercentage(uint256 _stakingPercentage) public onlyRole(VAULT_MANAGER_ROLE) {
-        if (_stakingPercentage > MAX_BIPS) revert StakingPercentageCannotBeGreaterThanMaxBips();
-        if (_stakingPercentage == 0) revert StakingPercentageCannotBeZero();
-
-        stakingPercentage = _stakingPercentage;
-        emit StakingPercentageSet(_stakingPercentage);
-    }
-
-    function setLicenseContract(address _licenseContract) public onlyRole(DEFAULT_ADMIN_ROLE) {
-        if (!_isContract(_licenseContract)) revert LicenseContractMustBeContract();
-
-        if (address(LICENSE) != address(0)) revert LicenseContractAlreadySet();
-
-        LICENSE = ILicense(_licenseContract);
-        emit LicenseContractSet(_licenseContract);
-    }
-
-    function setScoringContract(address _scoringContract) public onlyRole(DEFAULT_ADMIN_ROLE) {
-        if (!_isContract(_scoringContract)) revert ScoringContractMustBeContract();
-        if (address(SCORING) != address(0)) revert ScoringContractAlreadySet();
-
-        SCORING = IScoring(_scoringContract);
-        emit ScoringContractSet(_scoringContract);
-    }
-
-    function setTreasuryContract(address _treasuryContract) public onlyRole(DEFAULT_ADMIN_ROLE) {
-        if (!_isContract(_treasuryContract)) revert TreasuryContractMustBeContract();
-        if (address(TREASURY) != address(0)) revert TreasuryContractAlreadySet();
-
-        TREASURY = ITreasury(_treasuryContract);
-        emit TreasuryContractSet(_treasuryContract);
-    }
-
-    function setStakingContract(address _stakingContract) public onlyRole(DEFAULT_ADMIN_ROLE) {
-        if (!_isContract(_stakingContract)) revert StakingContractMustBeContract();
-        if (address(STAKING) != address(0)) revert StakingContractAlreadySet();
-
-        STAKING = IStaking(_stakingContract);
-        emit StakingContractSet(_stakingContract);
     }
 
     function getVaultEntity(address _vault) public view returns (address) {
@@ -247,12 +153,12 @@ contract VaultFactory is AccessControl, IVaultFactory {
         return vaults[_vault].refundableAmount;
     }
 
-    function getVault(address _vault) public view returns (VaultInfo memory) {
-        return vaults[_vault];
+    function getPoolSize(address _vault) public view returns (uint256) {
+        return vaults[_vault].desiredCap;
     }
 
-    function getLastVaultAddressByEntity(address _entity) public view returns (address) {
-        return vaultsByEntity[_entity][vaultsByEntity[_entity].length - 1].vault;
+    function getVault(address _vault) public view returns (VaultInfo memory) {
+        return vaults[_vault];
     }
 
     function getVaultsByEntity(address _entity) public view returns (VaultInfo[] memory) {
@@ -277,13 +183,5 @@ contract VaultFactory is AccessControl, IVaultFactory {
 
     function getDepositTokensCount() public view returns (uint256) {
         return depositTokens.length;
-    }
-
-    function _isContract(address _address) private view returns (bool) {
-        uint32 size;
-        assembly {
-            size := extcodesize(_address)
-        }
-        return (size > 0);
     }
 }
