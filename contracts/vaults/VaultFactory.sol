@@ -6,7 +6,7 @@ import {Clones} from "@openzeppelin/contracts/proxy/Clones.sol";
 import {Vault} from "./Vault.sol";
 
 import {IVaultFactory} from "../interfaces/vaults/IVaultFactory.sol";
-import {IVault} from "../interfaces/vaults/IVault.sol"
+import {IVault} from "../interfaces/vaults/IVault.sol";
 import {IOracle} from "../interfaces/vaults/IOracle.sol";
 
 contract VaultFactory is VaultFactoryManager, IVaultFactory {
