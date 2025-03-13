@@ -241,9 +241,9 @@ contract Treasury is AccessControl, ITreasury {
     function getRequiredCollateral(uint256 _poolSize) public view returns (uint256) {
         uint256 poolSizeInGoil = ORACLE.getTokenAmountForPayment(_poolSize);
         uint256 defaultCollateral = poolSizeInGoil * requiredCollateralPercentage / MAX_COLLATERAL_PERCENTAGE;
-        uint256 totalBalanceGoil = GOIL_TOKEN.balanceOf(address(this));
+        uint256 totalBalanceGoil = getGoilBalance();
 
-        if (totalBalanceGoil < totalRefundableAmount + poolSizeInGoil) {
+        if (totalBalanceGoil + defaultCollateral < totalRefundableAmount + poolSizeInGoil) {
             return poolSizeInGoil - (totalBalanceGoil - totalRefundableAmount);
         }
 
