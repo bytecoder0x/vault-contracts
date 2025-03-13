@@ -56,7 +56,7 @@ contract VaultFactory is VaultFactoryManager, IVaultFactory {
         if (!_isContract(_routerV2)) revert RouterV2MustBeContract();
         if (!_isContract(_routerV3)) revert RouterV3MustBeContract();
         if (!_isContract(_quoter)) revert QuoterMustBeContract();
-        
+
         ORACLE = IOracle(_oracle);
         GOIL_TOKEN = _goilToken;
         ROUTER_V2 = _routerV2;
@@ -74,7 +74,7 @@ contract VaultFactory is VaultFactoryManager, IVaultFactory {
     ) external withSetupNecessaryContracts withExistingDepositToken(_depositToken) {
         uint256 fundingEndTime = _startTime + _fundingPeriod;
         uint256 unlockEndTime = fundingEndTime + _lockPeriod;
-        
+
         if (_desiredCap == 0) revert DesiredCapCannotBeZero();
         if (_interestRate == 0) revert InterestRateCannotBeZero();
         if (_startTime <= block.timestamp) revert StartTimeMustBeInFuture();
@@ -94,49 +94,24 @@ contract VaultFactory is VaultFactoryManager, IVaultFactory {
         uint256 refundableAmount = ORACLE.getPaymentAmountForTokens(_desiredCap);
         uint256 requiredCollateral = TREASURY.getRequiredCollateral(_desiredCap);
 
-        IVault.VaultParams memory vaultParams = IVault.VaultParams({
-            entity: msg.sender,
-            scoring: address(SCORING),
-            treasury: address(TREASURY),
-            staking: address(STAKING),
-            goilToken: GOIL_TOKEN,
-            depositToken: _depositToken,
-            desiredCap: _desiredCap,
-            promisedCap: promisedCap,
-            startTime: _startTime,
-            fundingEndTime: fundingEndTime,
-            unlockEndTime: unlockEndTime,
-            amountForStaking: (promisedCap - _desiredCap) * stakingPercentage / MAX_BIPS
-        });
+        (address vault, VaultInfo memory newVault) = _createVault(
+            _depositToken,
+            _desiredCap,
+            promisedCap,
+            _interestRate,
+            requiredCollateral,
+            refundableAmount,
+            _startTime,
+            fundingEndTime,
+            unlockEndTime
+        );
 
-        IVault.DexParams memory dexParams = IVault.DexParams({
-            routerV2: ROUTER_V2,
-            routerV3: ROUTER_V3,
-            quoter: QUOTER
-        });
-
-        IVault vault = IVault(VAULT_IMPLEMENTATION.clone());
-        vault.initialize(vaultParams, dexParams);
-
-        VaultInfo memory newVault = VaultInfo({
-            vault: address(vault),
-            entity: msg.sender,
-            depositToken: _depositToken,
-            interestRate: _interestRate,
-            desiredCap: _desiredCap,
-            startTime: _startTime,
-            fundingEndTime: fundingEndTime,
-            unlockEndTime: unlockEndTime,
-            collateralAmount: requiredCollateral,
-            refundableAmount: refundableAmount
-        });
-
-        isVault[address(vault)] = true;
-        vaultsByEntity[msg.sender].push(newVault);
-        vaults[address(vault)] = newVault;
-        allVaults.push(newVault);
-        
-        TREASURY.depositCollateral(msg.sender, requiredCollateral, refundableAmount, _desiredCap);
+        TREASURY.depositCollateral(
+            msg.sender,
+            requiredCollateral,
+            refundableAmount,
+            _desiredCap
+        );
 
         emit VaultCreated(address(vault), msg.sender, newVault);
     }
@@ -161,11 +136,15 @@ contract VaultFactory is VaultFactoryManager, IVaultFactory {
         return vaults[_vault];
     }
 
-    function getVaultsByEntity(address _entity) public view returns (VaultInfo[] memory) {
+    function getVaultsByEntity(
+        address _entity
+    ) public view returns (VaultInfo[] memory) {
         return vaultsByEntity[_entity];
     }
 
-    function getVaultsCountByEntity(address _entity) public view returns (uint256) {
+    function getVaultsCountByEntity(
+        address _entity
+    ) public view returns (uint256) {
         return vaultsByEntity[_entity].length;
     }
 
@@ -183,5 +162,62 @@ contract VaultFactory is VaultFactoryManager, IVaultFactory {
 
     function getDepositTokensCount() public view returns (uint256) {
         return depositTokens.length;
+    }
+
+    function _createVault(
+        address _depositToken,
+        uint256 _desiredCap,
+        uint256 _promisedCap,
+        uint256 _interestRate,
+        uint256 _requiredCollateral,
+        uint256 _refundableAmount,
+        uint256 _startTime,
+        uint256 _fundingEndTime,
+        uint256 _unlockEndTime
+    ) private returns (address, VaultInfo memory) {
+        IVault.VaultParams memory vaultParams = IVault.VaultParams({
+            entity: msg.sender,
+            scoring: address(SCORING),
+            treasury: address(TREASURY),
+            staking: address(STAKING),
+            goilToken: GOIL_TOKEN,
+            depositToken: _depositToken,
+            desiredCap: _desiredCap,
+            promisedCap: _promisedCap,
+            startTime: _startTime,
+            fundingEndTime: _fundingEndTime,
+            unlockEndTime: _unlockEndTime,
+            amountForStaking: ((_promisedCap - _desiredCap) *
+                stakingPercentage) / MAX_BIPS
+        });
+
+        IVault.DexParams memory dexParams = IVault.DexParams({
+            routerV2: ROUTER_V2,
+            routerV3: ROUTER_V3,
+            quoter: QUOTER
+        });
+
+        IVault vault = IVault(VAULT_IMPLEMENTATION.clone());
+        vault.initialize(vaultParams, dexParams);
+
+        VaultInfo memory newVault = VaultInfo({
+            vault: address(vault),
+            entity: msg.sender,
+            depositToken: _depositToken,
+            interestRate: _interestRate,
+            desiredCap: _desiredCap,
+            startTime: _startTime,
+            fundingEndTime: _fundingEndTime,
+            unlockEndTime: _unlockEndTime,
+            collateralAmount: _requiredCollateral,
+            refundableAmount: _refundableAmount
+        });
+
+        isVault[address(vault)] = true;
+        vaultsByEntity[msg.sender].push(newVault);
+        vaults[address(vault)] = newVault;
+        allVaults.push(newVault);
+
+        return (address(vault), newVault);
     }
 }
