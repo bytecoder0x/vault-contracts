@@ -177,8 +177,19 @@ contract Scoring is ScoringManager, IScoring {
     }
     
     function getMaxPoolSize(address _entity) public view returns (uint256 maxPoolSize) {
-        uint256 lastScore = scores[_entity][scores[_entity].length - 1];
+        uint256 lastScore = getLastScore(_entity);
         maxPoolSize = (lastScore * thresholdCapital) / SCORE_PRECISION;
+    }
+
+    function getMaxPossiblePoolSize(address _entity) public view returns (uint256 maxPossiblePoolSize) {
+        uint256 maxPoolSize = getMaxPoolSize(_entity);
+        uint256 totalBorrowed = TREASURY.getTotalBorrowed(_entity);
+
+        if (totalBorrowed > maxPoolSize) {
+            maxPossiblePoolSize = 0;
+        } else {
+            maxPossiblePoolSize = maxPoolSize - totalBorrowed;
+        }
     }
 
     function isReadyToSetInitialScore(address _entity) public view returns (bool) {

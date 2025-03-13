@@ -7,7 +7,7 @@ import { ethers } from "hardhat";
 import { APPLICATION_FEE, LICENSE_MONTHLY_FEE, DEFAULT_VAULT_PARAMS } from "../constants";
 
 // TODO: scenario for old vault that was liquidated 
-describe.only("GoilScoring", function () {
+describe("GoilScoring", function () {
     let treasury: Treasury;
     let vaultFactory: VaultFactory;
     let license: License;
@@ -174,7 +174,7 @@ describe.only("GoilScoring", function () {
         });
     });
 
-    describe.only("Score functionallity", function () {
+    describe("Score functionallity", function () {
         beforeEach(async () => {
             await createLicense();
             await createLicense(entity2);

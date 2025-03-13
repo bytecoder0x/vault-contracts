@@ -80,7 +80,6 @@ contract Oracle is AccessControl, IOracle {
         emit PurchaseTokenUpdated(_purchaseToken);
     }
 
-
     function _isContract(address _address) private view returns (bool) {
         uint32 size;
         assembly {

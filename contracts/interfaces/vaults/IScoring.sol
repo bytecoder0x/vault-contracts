@@ -25,6 +25,7 @@ interface IScoring {
     function setInitialScore(address _entity) external;
     function isReadyToSetInitialScore(address _entity) external view returns (bool);
     function getMaxPoolSize(address _entity) external view returns (uint256 maxPoolSize);
+    function getMaxPossiblePoolSize(address _entity) external view returns (uint256 maxPossiblePoolSize);
     function getScores(address _entity) external view returns (uint256[] memory scores);
     function getScoresCount(address _entity) external view returns (uint256 scoresCount);
     function getLastScore(address _entity) external view returns (uint256 lastScore);
