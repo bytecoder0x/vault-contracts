@@ -88,7 +88,7 @@ contract VaultFactory is VaultFactoryManager, IVaultFactory {
         uint256 maxAllowedPoolSize = _desiredCap + (_interestRate * _lockPeriod) / MAX_BIPS;
         uint256 promisedCap = (_desiredCap * (MAX_BIPS + _interestRate)) / MAX_BIPS;
 
-        if (_desiredCap > maxPossiblePoolSize) revert NooAllowedPoolSize();
+        if (_desiredCap > maxPossiblePoolSize) revert NotAllowedPoolSize();
         if (maxPossiblePoolSize < maxAllowedPoolSize) revert HighInterestRate();
 
         uint256 refundableAmount = ORACLE.getPaymentAmountForTokens(_desiredCap);

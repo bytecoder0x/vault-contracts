@@ -57,8 +57,8 @@ contract VaultFactoryManager is AccessControl, IVaultFactoryManager {
 
     function removeDepositToken(address _depositToken) public onlyRole(VAULT_FACTORY_MANAGER_ROLE) {
         uint256 totalDepositTokens = depositTokens.length;
-        if (totalDepositTokens == 1) revert CannotRemoveLastDepositToken();
         if (!isDepositToken[_depositToken]) revert DepositTokenDoesNotExist();
+        if (totalDepositTokens == 1) revert CannotRemoveLastDepositToken();
 
         isDepositToken[_depositToken] = false;
         for (uint256 i = 0; i < totalDepositTokens; i++) {

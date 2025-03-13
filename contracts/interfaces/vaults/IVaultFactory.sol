@@ -15,7 +15,7 @@ interface IVaultFactory {
     error StartTimeMustBeInFuture();
     error StartTimeMustBeBeforeFundingEndTime();
     error FundingEndTimeMustBeBeforeUnlockEndTime();
-    error NooAllowedPoolSize();
+    error NotAllowedPoolSize();
     error HighInterestRate();
     error QuoterMustBeContract();
     error UnlockPeriodTooLong();
