@@ -28,6 +28,7 @@ contract Treasury is AccessControl, ITreasury {
     uint256 public totalRefundableAmount;
 
     mapping(address => Collateral) public collateral;
+    mapping(address => uint256) public totalBorrowed; // total borrowed active amount by entity
 
     modifier onlyScoring() {
         if (msg.sender != SCORING) revert OnlyScoringAllowed();
@@ -100,9 +101,11 @@ contract Treasury is AccessControl, ITreasury {
     function depositCollateral(
         address _entity,
         uint256 _requiredCollateral,
-        uint256 _refundableAmount
+        uint256 _refundableAmount,
+        uint256 _poolSize
     ) external onlyVaultFactory withSetupNecessaryContracts {
         collateral[_entity].collateralLocked += _requiredCollateral;
+        totalBorrowed[_entity] += _poolSize;
         totalRefundableAmount += _refundableAmount;
 
         GOIL_TOKEN.transferFrom(_entity, address(this), _requiredCollateral);
@@ -130,10 +133,12 @@ contract Treasury is AccessControl, ITreasury {
 
     function unlockCollateral(address _vault) external onlyScoring withSetupNecessaryContracts {
         address entity = IVault(_vault).ENTITY();
+        uint256 poolSize = IVault(_vault).desiredCap();
         uint256 collateralAmount = VAULT_FACTORY.getCollateralAmount(_vault);
         uint256 refundableAmount = VAULT_FACTORY.getRefundableAmount(_vault);
 
         totalRefundableAmount -= refundableAmount;
+        totalBorrowed[entity] -= poolSize;
 
         collateral[entity].collateralLocked -= collateralAmount;
         collateral[entity].collateralUnlocked += collateralAmount; 
@@ -146,6 +151,7 @@ contract Treasury is AccessControl, ITreasury {
         address vault = msg.sender;
 
         address entity = IVault(vault).ENTITY();
+        uint256 poolSize = IVault(vault).desiredCap();
         uint256 refundableAmount = VAULT_FACTORY.getRefundableAmount(vault);
         uint256 collateralAmountByEntity = collateral[entity].collateralLocked;
 
@@ -155,6 +161,7 @@ contract Treasury is AccessControl, ITreasury {
             collateral[entity].collateralLocked -= refundableAmount;
         }
 
+        totalBorrowed[entity] -= poolSize;
         totalRefundableAmount -= refundableAmount;
 
         GOIL_TOKEN.transfer(vault, refundableAmount);
@@ -225,6 +232,10 @@ contract Treasury is AccessControl, ITreasury {
 
         LICENSE = ILicense(_license);
         emit LicenseContractUpdated(_license);
+    }
+
+    function getTotalBorrowed(address _entity) public view returns (uint256) {
+        return totalBorrowed[_entity];
     }
 
     function getRequiredCollateral(uint256 _poolSize) public view returns (uint256) {

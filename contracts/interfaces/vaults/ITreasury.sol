@@ -54,7 +54,7 @@ interface ITreasury {
     
     function collateral(address _entity) external view returns (uint256, uint256);
 
-    function depositCollateral(address _entity, uint256 _requiredCollateral, uint256 _refundableAmount) external;
+    function depositCollateral(address _entity, uint256 _requiredCollateral, uint256 _refundableAmount, uint256 _poolSize) external;
     function depositCollateral(address _entity, uint256 _amount) external;
     function withdrawCollateral() external;
     function unlockCollateral(address _vault) external;
@@ -66,6 +66,7 @@ interface ITreasury {
     function setScoringContract(address _scoring) external;
     function setStakingContract(address _staking) external;
     function setLicenseContract(address _license) external;
+    function getTotalBorrowed(address _entity) external view returns (uint256);
     function getRequiredCollateral(uint256 _poolSize) external view returns (uint256);
     function getGoilBalance() external view returns (uint256);
 }
