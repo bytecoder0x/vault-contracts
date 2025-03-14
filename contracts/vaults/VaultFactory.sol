@@ -136,15 +136,11 @@ contract VaultFactory is VaultFactoryManager, IVaultFactory {
         return vaults[_vault];
     }
 
-    function getVaultsByEntity(
-        address _entity
-    ) public view returns (VaultInfo[] memory) {
+    function getVaultsByEntity(address _entity) public view returns (VaultInfo[] memory) {
         return vaultsByEntity[_entity];
     }
 
-    function getVaultsCountByEntity(
-        address _entity
-    ) public view returns (uint256) {
+    function getVaultsCountByEntity(address _entity) public view returns (uint256) {
         return vaultsByEntity[_entity].length;
     }
 
