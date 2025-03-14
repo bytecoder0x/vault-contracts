@@ -20,7 +20,7 @@ import { time } from "@nomicfoundation/hardhat-network-helpers";
 import { deployAllContracts } from "../utils";
 import { APPLICATION_FEE, COLLATERAL_AMOUNT, DEFAULT_VAULT_PARAMS, INITIAL_SUPPLY, LICENSE_MONTHLY_FEE } from "../constants";
 
-describe.only("VaultFactory", function () {
+describe("VaultFactory", function () {
     let vaultFactory: VaultFactory;
     let treasury: Treasury;
     let license: License;

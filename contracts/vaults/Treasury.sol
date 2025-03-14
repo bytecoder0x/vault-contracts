@@ -132,27 +132,23 @@ contract Treasury is AccessControl, ITreasury {
     }
 
     function unlockCollateral(address _vault) external onlyScoring withSetupNecessaryContracts {
-        address entity = IVault(_vault).ENTITY();
-        uint256 poolSize = IVault(_vault).desiredCap();
-        uint256 collateralAmount = VAULT_FACTORY.getCollateralAmount(_vault);
-        uint256 refundableAmount = VAULT_FACTORY.getRefundableAmount(_vault);
+        IVaultFactory.VaultInfo memory vaultInfo = VAULT_FACTORY.getVault(_vault);
 
-        totalRefundableAmount -= refundableAmount;
-        totalBorrowed[entity] -= poolSize;
+        totalRefundableAmount -= vaultInfo.refundableAmount;
+        totalBorrowed[vaultInfo.entity] -= vaultInfo.desiredCap;
 
-        collateral[entity].collateralLocked -= collateralAmount;
-        collateral[entity].collateralUnlocked += collateralAmount; 
+        collateral[vaultInfo.entity].collateralLocked -= vaultInfo.collateralAmount;
+        collateral[vaultInfo.entity].collateralUnlocked += vaultInfo.collateralAmount; 
 
-        emit CollateralUnlocked(entity, collateralAmount);
+        emit CollateralUnlocked(vaultInfo.entity, vaultInfo.collateralAmount);
     }
 
     function fundVault() external onlyVault withSetupNecessaryContracts {
         // TODO: think about partial funding from entity's , thinks how do implement here
-        address vault = msg.sender;
+        IVaultFactory.VaultInfo memory vaultInfo = VAULT_FACTORY.getVault(msg.sender);
 
-        address entity = IVault(vault).ENTITY();
-        uint256 poolSize = IVault(vault).desiredCap();
-        uint256 refundableAmount = VAULT_FACTORY.getRefundableAmount(vault);
+        address entity = vaultInfo.entity;
+        uint256 refundableAmount = vaultInfo.refundableAmount;
         uint256 collateralAmountByEntity = collateral[entity].collateralLocked;
 
         if (collateralAmountByEntity < refundableAmount) {
@@ -161,11 +157,11 @@ contract Treasury is AccessControl, ITreasury {
             collateral[entity].collateralLocked -= refundableAmount;
         }
 
-        totalBorrowed[entity] -= poolSize;
+        totalBorrowed[entity] -= vaultInfo.desiredCap;
         totalRefundableAmount -= refundableAmount;
 
-        GOIL_TOKEN.transfer(vault, refundableAmount);
-        emit VaultFunded(vault, refundableAmount);
+        GOIL_TOKEN.transfer(msg.sender, vaultInfo.refundableAmount);
+        emit VaultFunded(msg.sender, vaultInfo.refundableAmount);
     }
 
     function unstakeTokens(
