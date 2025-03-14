@@ -135,8 +135,6 @@ contract Treasury is AccessControl, ITreasury {
         IVaultFactory.VaultInfo memory vaultInfo = VAULT_FACTORY.getVault(_vault);
 
         totalRefundableAmount -= vaultInfo.refundableAmount;
-        totalBorrowed[vaultInfo.entity] -= vaultInfo.desiredCap;
-
         collateral[vaultInfo.entity].collateralLocked -= vaultInfo.collateralAmount;
         collateral[vaultInfo.entity].collateralUnlocked += vaultInfo.collateralAmount; 
 
@@ -163,11 +161,10 @@ contract Treasury is AccessControl, ITreasury {
             collateral[entity].collateralLocked -= _currentRefundableAmount;
         }
 
-        totalBorrowed[entity] -= vaultInfo.desiredCap;
         totalRefundableAmount -= _refundableAmount;
 
-        GOIL_TOKEN.transfer(msg.sender, _currentRefundableAmount);
-        emit VaultFunded(msg.sender, _currentRefundableAmount);
+        GOIL_TOKEN.transfer(msg.sender, _refundableAmount);
+        emit VaultFunded(msg.sender, _refundableAmount);
     }
 
     function unstakeTokens(
