@@ -83,6 +83,8 @@ contract Scoring is ScoringManager, IScoring {
 
             totalFails[entity] += failureRate;
             updatedScore = updatedScore * _calculatePenalty(totalFails[entity]) / SCORE_PRECISION;
+            
+            TREASURY.releaseBorrowed(address(vault));
         }  else {
             TREASURY.unlockCollateral(address(vault));
         }

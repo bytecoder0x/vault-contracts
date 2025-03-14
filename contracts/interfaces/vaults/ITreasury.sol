@@ -11,6 +11,7 @@ interface ITreasury {
     event VaultFunded(address indexed vault, uint256 amount);
     event StakingTokensReplenished(address indexed token, uint256 amount);
     event StakingTokensTransferred(address indexed recipient, uint256 amount);
+    event BorrowedReleased(address indexed entity, uint256 amount);
     event CollateralUnlocked(address indexed entity, uint256 amount);
     event CollateralDeposited(address indexed entity, uint256 amount);
     event CollateralWithdrawn(address indexed entity, uint256 amount);
@@ -57,8 +58,9 @@ interface ITreasury {
     function depositCollateral(address _entity, uint256 _requiredCollateral, uint256 _refundableAmount, uint256 _poolSize) external;
     function depositCollateral(address _entity, uint256 _amount) external;
     function withdrawCollateral() external;
+    function releaseBorrowed(address _vault) external;
     function unlockCollateral(address _vault) external;
-    function fundVault() external;
+    function fundVault(uint256 _refundableAmount, uint256 _currentRefundableAmount) external;
     function setRequiredCollateralPercentage(uint256 _requiredCollateralPercentage) external;
     function unstakeTokens(address _recipient, uint256 _amount) external;
     function withdrawTokens(address _recipient, address _token, uint256 _amount) external;

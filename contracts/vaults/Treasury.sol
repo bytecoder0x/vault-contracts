@@ -143,25 +143,31 @@ contract Treasury is AccessControl, ITreasury {
         emit CollateralUnlocked(vaultInfo.entity, vaultInfo.collateralAmount);
     }
 
-    function fundVault() external onlyVault withSetupNecessaryContracts {
-        // TODO: think about partial funding from entity's , thinks how do implement here
+    function releaseBorrowed(address _vault) external onlyScoring withSetupNecessaryContracts {
+        IVaultFactory.VaultInfo memory vaultInfo = VAULT_FACTORY.getVault(_vault);
+
+        totalBorrowed[vaultInfo.entity] -= vaultInfo.desiredCap;
+
+        emit BorrowedReleased(vaultInfo.entity, vaultInfo.desiredCap);
+    }
+
+    function fundVault(uint256 _refundableAmount, uint256 _currentRefundableAmount) external onlyVault withSetupNecessaryContracts {
         IVaultFactory.VaultInfo memory vaultInfo = VAULT_FACTORY.getVault(msg.sender);
 
         address entity = vaultInfo.entity;
-        uint256 refundableAmount = vaultInfo.refundableAmount;
         uint256 collateralAmountByEntity = collateral[entity].collateralLocked;
 
-        if (collateralAmountByEntity < refundableAmount) {
+        if (collateralAmountByEntity < _currentRefundableAmount) {
             collateral[entity].collateralLocked = 0;
         } else {
-            collateral[entity].collateralLocked -= refundableAmount;
+            collateral[entity].collateralLocked -= _currentRefundableAmount;
         }
 
         totalBorrowed[entity] -= vaultInfo.desiredCap;
-        totalRefundableAmount -= refundableAmount;
+        totalRefundableAmount -= _refundableAmount;
 
-        GOIL_TOKEN.transfer(msg.sender, vaultInfo.refundableAmount);
-        emit VaultFunded(msg.sender, vaultInfo.refundableAmount);
+        GOIL_TOKEN.transfer(msg.sender, _currentRefundableAmount);
+        emit VaultFunded(msg.sender, _currentRefundableAmount);
     }
 
     function unstakeTokens(

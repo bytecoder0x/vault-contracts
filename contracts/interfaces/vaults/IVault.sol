@@ -35,6 +35,7 @@ interface IVault {
         uint256 fundingEndTime;
         uint256 unlockEndTime;
         uint256 amountForStaking;
+        uint256 refundableAmount;
     }
 
     error EntityCannotBeZeroAddress();
