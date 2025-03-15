@@ -35,6 +35,7 @@ interface IVault {
         uint256 fundingEndTime;
         uint256 unlockEndTime;
         uint256 amountForStaking;
+        uint256 refundableAmount;
     }
 
     error EntityCannotBeZeroAddress();
@@ -81,6 +82,7 @@ interface IVault {
     function withdrawToEntity() external;
     
     function getVaultState() external view returns (VaultState);
+    function getCurrentRefundableAmount() external view returns (uint256);
     function getPromisedAndUnpaidAmount() external view returns (uint256 promisedAmount, uint256 unpaidAmount);
     function isLiquidatable() external view returns (bool);
     function isNotRaisedDesiredCap() external view returns (bool);

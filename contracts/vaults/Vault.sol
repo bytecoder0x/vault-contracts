@@ -16,6 +16,8 @@ import {console} from "hardhat/console.sol";
 contract Vault is Initializable, ERC4626Upgradeable, SwapHandler, IVault {
     using SafeERC20Upgradeable for IERC20Upgradeable;
 
+    uint256 public constant MAX_BIPS = 100_00;
+
     IScoring public SCORING;
     IStaking public STAKING;
     ITreasury public TREASURY;
@@ -32,6 +34,7 @@ contract Vault is Initializable, ERC4626Upgradeable, SwapHandler, IVault {
     uint256 public fundingEndTime;
     uint256 public unlockEndTime;
     uint256 public amountForStaking;
+    uint256 public refundableAmount;
 
     uint256 public totalDepositsFromUsers;
     uint256 public totalDepositsFromEntity;
@@ -62,6 +65,7 @@ contract Vault is Initializable, ERC4626Upgradeable, SwapHandler, IVault {
         fundingEndTime = _vaultParams.fundingEndTime;
         unlockEndTime = _vaultParams.unlockEndTime;
         amountForStaking = _vaultParams.amountForStaking;
+        refundableAmount = _vaultParams.refundableAmount;
     }
 
     function deposit(uint256 _amountToDeposit) public returns (uint256) {
@@ -149,6 +153,20 @@ contract Vault is Initializable, ERC4626Upgradeable, SwapHandler, IVault {
         return (promisedCap, promisedCap - totalAssets());
     }
 
+    // return refundable amount proportional to how much the entity paid (use for correct calculation unlock collateral amount)
+    function getCurrentRefundableAmount() public view returns (uint256) {
+        uint256 totalAsset = totalAssets();
+
+        if (totalAsset >= desiredCap) return 0;
+        if (totalAsset == 0) return refundableAmount;
+
+        uint256 unpaidAmount = desiredCap - totalAsset;
+        uint256 unpaidPercentage = (unpaidAmount * MAX_BIPS) / desiredCap;
+        uint256 currentRefundableAmount = (refundableAmount * unpaidPercentage) / MAX_BIPS;
+
+        return currentRefundableAmount;
+    }
+
     function isLiquidatable() public view returns (bool) {
         uint256 currentTime = block.timestamp;
 
@@ -208,6 +226,8 @@ contract Vault is Initializable, ERC4626Upgradeable, SwapHandler, IVault {
 
         uint256 totalAsset = totalAssets();
         if (desiredCap > totalAsset) {
+            TREASURY.fundVault(refundableAmount);
+
             if (totalAsset > 0) {
                 _swap(totalAsset, address(TREASURY), address(GOIL_TOKEN), address(DEPOSIT_TOKEN));
             }
@@ -216,8 +236,6 @@ contract Vault is Initializable, ERC4626Upgradeable, SwapHandler, IVault {
             (bool success, uint8 assetDecimals) = _tryGetAssetDecimals(IERC20Upgradeable(GOIL_TOKEN));
             _underlyingDecimals = success ? assetDecimals : 18;
             _asset = IERC20Upgradeable(GOIL_TOKEN);
-
-            TREASURY.fundVault();
         }
     }
 

@@ -183,8 +183,8 @@ contract VaultFactory is VaultFactoryManager, IVaultFactory {
             startTime: _startTime,
             fundingEndTime: _fundingEndTime,
             unlockEndTime: _unlockEndTime,
-            amountForStaking: ((_promisedCap - _desiredCap) *
-                stakingPercentage) / MAX_BIPS
+            amountForStaking: ((_promisedCap - _desiredCap) *stakingPercentage) / MAX_BIPS,
+            refundableAmount: _refundableAmount
         });
 
         IVault.DexParams memory dexParams = IVault.DexParams({
