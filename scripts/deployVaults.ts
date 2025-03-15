@@ -10,13 +10,13 @@ async function main() {
 
     const quadrataAddress = "0x73A2e70bEf04d4e6CABc0ff78fbA7B553166fCf6";
 
-    let oracleAddress = "0x240717186a4Fb4Ce490ea7421e4A5026c430Edc4";
-    let vaultFactoryAddress = "0xBCF375A8e90978fCcE3C87fFf6A9a2680952F974";
-    let vaultImplementationAddress = "0x0000000000000000000000000000000000000000";
-    let treasuryAddress = "0xb3275dC9846Aa20319386Dfd2A0f7280F0CF9b6c";
-    let licenseAddress = "0xb138cb6bf53275f8c3A212F344d0701107cc7971";
-    let scoringAddress = "0x09DC3f4caA8BE664b74f9c73F257e48B3CD28a3F";
-    let stakingAddress = "0x319bd53ea148305C290488AB2ffe9A3C97aF55b0";
+    let oracleAddress = "0x731947403026e6C5893E96b4379Cb0539CFC79ca";
+    let vaultFactoryAddress = "0x41836bcC5d044DE48B2BcCa239B31E6ded956B7c";
+    let vaultImplementationAddress = "0x1aAd07db81D0AE00C26528cE49d3dCfB8e2A5FD5";
+    let treasuryAddress = "0x19c9696f02107cA49CF0958b38fbDe078D60Ea14";
+    let licenseAddress = "0x8ee5421d69f4d614aAb3910430A5Be3a6F958739";
+    let scoringAddress = "0xb8547575e02B7d1388d25199D7383658Ee28Ee42";
+    let stakingAddress = "0x54eE7dA71bA070512C797c589f5f1128a3c26146";
 
     const quoterAddress = "0x61fFE014bA17989E743c5F6cB21bF9697530B21e";
     const routerV2Address = "0x4752ba5dbc23f44d87826276bf6fd6b1c372ad24";
@@ -166,8 +166,8 @@ async function main() {
     const TREASURY_MANAGER_ROLE = await treasury.TREASURY_MANAGER_ROLE();
     await treasury.grantRole(TREASURY_MANAGER_ROLE, managerAddress);
 
-    const VAULT_MANAGER_ROLE = await vaultFactory.VAULT_MANAGER_ROLE();
-    await vaultFactory.grantRole(VAULT_MANAGER_ROLE, managerAddress);
+    const VAULT_FACTORY_MANAGER_ROLE = await vaultFactory.VAULT_FACTORY_MANAGER_ROLE();
+    await vaultFactory.grantRole(VAULT_FACTORY_MANAGER_ROLE, managerAddress);
 
     console.log("All roles granted successfully!");
 
