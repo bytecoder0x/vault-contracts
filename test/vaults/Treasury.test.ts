@@ -386,7 +386,7 @@ describe("GoilTreasury", function () {
 
 		it("Should not allow unlocking collateral to anyone except scoring", async function () {
 			await expect(
-				treasury.connect(entity).unlockCollateral(ethers.ZeroAddress)
+				treasury.connect(entity).unlockCollateralAndBorrowed(ethers.ZeroAddress)
 			).to.be.revertedWithCustomError(treasury, "OnlyScoringAllowed");
 		});
 	});

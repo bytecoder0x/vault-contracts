@@ -131,38 +131,35 @@ contract Treasury is AccessControl, ITreasury {
         emit CollateralWithdrawn(entity, collateralAmount);
     }
 
-    function unlockCollateral(address _vault) external onlyScoring withSetupNecessaryContracts {
+    function unlockCollateralAndBorrowed(address _vault) external onlyScoring withSetupNecessaryContracts {
         IVaultFactory.VaultInfo memory vaultInfo = VAULT_FACTORY.getVault(_vault);
 
-        totalRefundableAmount -= vaultInfo.refundableAmount;
-        collateral[vaultInfo.entity].collateralLocked -= vaultInfo.collateralAmount;
-        collateral[vaultInfo.entity].collateralUnlocked += vaultInfo.collateralAmount; 
-
-        emit CollateralUnlocked(vaultInfo.entity, vaultInfo.collateralAmount);
-    }
-
-    function releaseBorrowed(address _vault) external onlyScoring withSetupNecessaryContracts {
-        IVaultFactory.VaultInfo memory vaultInfo = VAULT_FACTORY.getVault(_vault);
-
-        totalBorrowed[vaultInfo.entity] -= vaultInfo.desiredCap;
-
-        emit BorrowedReleased(vaultInfo.entity, vaultInfo.desiredCap);
-    }
-
-    function fundVault(uint256 _refundableAmount, uint256 _currentRefundableAmount) external onlyVault withSetupNecessaryContracts {
-        IVaultFactory.VaultInfo memory vaultInfo = VAULT_FACTORY.getVault(msg.sender);
-
+        bool isVaultSuccess = IVault(_vault).isVaultSuccess();
         address entity = vaultInfo.entity;
-        uint256 collateralAmountByEntity = collateral[entity].collateralLocked;
 
-        if (collateralAmountByEntity < _currentRefundableAmount) {
-            collateral[entity].collateralLocked = 0;
+        if (isVaultSuccess) {
+            collateral[entity].collateralLocked -= vaultInfo.collateralAmount;
+            collateral[entity].collateralUnlocked += vaultInfo.collateralAmount; 
         } else {
-            collateral[entity].collateralLocked -= _currentRefundableAmount;
+            uint256 currentRefundableAmount = IVault(_vault).getCurrentRefundableAmount();
+            uint256 collateralLocked = collateral[entity].collateralLocked;
+
+            if (currentRefundableAmount <= collateralLocked) {
+                collateral[entity].collateralLocked -= currentRefundableAmount;
+            } else {
+                uint256 remainingAmount = currentRefundableAmount - collateralLocked;
+                collateral[entity].collateralLocked = 0;
+                collateral[entity].collateralUnlocked -= remainingAmount;
+            }
         }
 
-        totalRefundableAmount -= _refundableAmount;
+        totalRefundableAmount -= vaultInfo.refundableAmount;
+        totalBorrowed[vaultInfo.entity] -= vaultInfo.desiredCap;
 
+        emit CollateralAndBorrowedUnlocked(vaultInfo.entity, _vault);
+    }
+
+    function fundVault(uint256 _refundableAmount) external onlyVault withSetupNecessaryContracts {
         GOIL_TOKEN.transfer(msg.sender, _refundableAmount);
         emit VaultFunded(msg.sender, _refundableAmount);
     }

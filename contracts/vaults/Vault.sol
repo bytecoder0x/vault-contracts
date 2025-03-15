@@ -153,6 +153,20 @@ contract Vault is Initializable, ERC4626Upgradeable, SwapHandler, IVault {
         return (promisedCap, promisedCap - totalAssets());
     }
 
+    // return refundable amount proportional to how much the entity paid (use for correct calculation unlock collateral amount)
+    function getCurrentRefundableAmount() public view returns (uint256) {
+        uint256 totalAsset = totalAssets();
+
+        if (totalAsset >= desiredCap) return 0;
+        if (totalAsset == 0) return refundableAmount;
+
+        uint256 unpaidAmount = desiredCap - totalAsset;
+        uint256 unpaidPercentage = (unpaidAmount * MAX_BIPS) / desiredCap;
+        uint256 currentRefundableAmount = (refundableAmount * unpaidPercentage) / MAX_BIPS;
+
+        return currentRefundableAmount;
+    }
+
     function isLiquidatable() public view returns (bool) {
         uint256 currentTime = block.timestamp;
 
@@ -212,11 +226,7 @@ contract Vault is Initializable, ERC4626Upgradeable, SwapHandler, IVault {
 
         uint256 totalAsset = totalAssets();
         if (desiredCap > totalAsset) {
-            uint256 unpaidAmount = desiredCap - totalAsset;
-            uint256 unpaidPercentage = (unpaidAmount * MAX_BIPS) / desiredCap;
-            uint256 currentRefundableAmount = (refundableAmount * unpaidPercentage) / MAX_BIPS;
-
-            TREASURY.fundVault(refundableAmount, currentRefundableAmount);
+            TREASURY.fundVault(refundableAmount);
 
             if (totalAsset > 0) {
                 _swap(totalAsset, address(TREASURY), address(GOIL_TOKEN), address(DEPOSIT_TOKEN));
