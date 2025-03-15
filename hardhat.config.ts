@@ -25,10 +25,11 @@ const config: HardhatUserConfig = {
       url: ARBITRUM_URL || "",
       chainId: 42161,
       accounts: [PRIVATE_KEY || ""]
-    },
+    }
   },
   etherscan: {
     apiKey: {
+      arbitrumSepolia: ARBITRUM_SCANER_KEY || "",
       arbitrumOne: ARBITRUM_SCANER_KEY || ""
     }
   }
