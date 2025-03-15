@@ -4,7 +4,7 @@ pragma solidity ^0.8.27;
 import {AccessControl} from "@openzeppelin/contracts/access/AccessControl.sol";
 import {IScoringManager} from "../../interfaces/vaults/components/IScoringManager.sol";
 
-contract ScoringManager is AccessControl, IScoringManager {
+abstract contract ScoringManager is AccessControl, IScoringManager {
     bytes32 public constant SCORING_MANAGER_ROLE = keccak256("SCORING_MANAGER_ROLE");
 
     uint24 public constant MAX_RATIO = 100_000;

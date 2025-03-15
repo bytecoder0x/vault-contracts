@@ -9,7 +9,7 @@ import {ILicense} from "../../interfaces/vaults/ILicense.sol";
 import {IScoring} from "../../interfaces/vaults/IScoring.sol";
 import {IStaking} from "../../interfaces/vaults/IStaking.sol";
 
-contract VaultFactoryManager is AccessControl, IVaultFactoryManager {
+abstract contract VaultFactoryManager is AccessControl, IVaultFactoryManager {
     bytes32 public constant VAULT_FACTORY_MANAGER_ROLE = keccak256("VAULT_FACTORY_MANAGER_ROLE");
 
     uint256 public constant MAX_BIPS = 100_00;
