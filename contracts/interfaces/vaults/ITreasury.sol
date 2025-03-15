@@ -11,9 +11,10 @@ interface ITreasury {
     event VaultFunded(address indexed vault, uint256 amount);
     event StakingTokensReplenished(address indexed token, uint256 amount);
     event StakingTokensTransferred(address indexed recipient, uint256 amount);
-    event CollateralUnlocked(address indexed entity, uint256 amount);
-    event CollateralDeposited(address indexed depositor, address indexed entity, address indexed vault, uint256 amount);
+    event CollateralAndBorrowedUnlocked(address indexed entity, address indexed vault);
+    event CollateralDeposited(address indexed entity, uint256 amount);
     event CollateralWithdrawn(address indexed entity, uint256 amount);
+    event RequiredCollateralPercentageUpdated(uint256 requiredCollateralPercentage);
     event ScoringContractUpdated(address indexed scoring);
     event StakingContractUpdated(address indexed staking);
     event LicenseContractUpdated(address indexed license);
@@ -26,6 +27,7 @@ interface ITreasury {
     error OnlyStakingAllowed();
     error OnlyLicenseAllowed();
     error OnlyVaultFactoryAllowed();
+    error OnlyVaultAllowed();
     error VaultFactoryMustBeContract();
     error GoilTokenMustBeContract();
     error ScoringMustBeContract();
@@ -35,8 +37,10 @@ interface ITreasury {
     error RecipientCannotBeZeroAddress();
     error ZeroAmountToDeposit();
     error ZeroAmountToWithdraw();
+    error NoCollateralToWithdraw();
     error CannotWithdrawDuringActiveLicense();
     error InsufficientCollateral();
+    error InsufficientRefundableAmount();
     error VaultIsNotValid();
     error ScoringContractNotSet();
     error StakingContractNotSet();
@@ -44,19 +48,25 @@ interface ITreasury {
     error ScoringAlreadySet();
     error StakingAlreadySet();
     error LicenseAlreadySet();
+    error RequiredCollateralPercentageCannotBeZero();
+    error RequiredCollateralPercentageCannotBeTheSame();
+    error RequiredCollateralPercentageTooHigh();
     
     function collateral(address _entity) external view returns (uint256, uint256);
 
-    function depositCollateral(address _vault) external;
+    function depositCollateral(address _entity, uint256 _requiredCollateral, uint256 _refundableAmount, uint256 _poolSize) external;
     function depositCollateral(address _entity, uint256 _amount) external;
-    function withdrawCollateral(uint256 _amount) external;
-    function unlockCollateral(address _vault) external;
-    function fundVault(address _vault) external;
+    function withdrawCollateral() external;
+    function unlockCollateralAndBorrowed(address _vault) external;
+    function fundVault(uint256 _refundableAmount) external;
+    function setRequiredCollateralPercentage(uint256 _requiredCollateralPercentage) external;
     function unstakeTokens(address _recipient, uint256 _amount) external;
     function withdrawTokens(address _recipient, address _token, uint256 _amount) external;
     function withdrawAllTokens(address _token) external;
     function setScoringContract(address _scoring) external;
     function setStakingContract(address _staking) external;
     function setLicenseContract(address _license) external;
+    function getTotalBorrowed(address _entity) external view returns (uint256);
     function getRequiredCollateral(uint256 _poolSize) external view returns (uint256);
+    function getGoilBalance() external view returns (uint256);
 }

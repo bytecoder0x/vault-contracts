@@ -10,9 +10,11 @@ import {IUniswapV3Factory} from "@uniswap/v3-core/contracts/interfaces/IUniswapV
 import {IOracle} from "../interfaces/vaults/IOracle.sol";
 
 contract Oracle is AccessControl, IOracle {
-    bytes32 public constant MANAGER_ROLE = keccak256("MANAGER_ROLE");
+    bytes32 public constant ORACLE_MANAGER_ROLE = keccak256("ORACLE_MANAGER_ROLE");
 
     IUniswapV3Factory public immutable FACTORY_V3;
+    
+    uint256 public immutable ONE_TOKEN;
     address public immutable GOIL_TOKEN;
 
     address public purchaseToken;
@@ -32,16 +34,15 @@ contract Oracle is AccessControl, IOracle {
 
         purchaseToken = _purchaseToken;
         GOIL_TOKEN = _goilToken;
+        ONE_TOKEN = 10 ** IERC20Metadata(_goilToken).decimals();
 
-        _grantRole(MANAGER_ROLE, _admin);
+        _grantRole(ORACLE_MANAGER_ROLE, _admin);
         _grantRole(DEFAULT_ADMIN_ROLE, _admin);
     }
 
     function getPricePerToken() external view returns (uint256) {
-        uint256 oneToken = 10 ** IERC20Metadata(GOIL_TOKEN).decimals();
-
         int24 tick = OracleLibrary.consult(pool, secondsAgo);
-        uint256 price = OracleLibrary.getQuoteAtTick(tick, uint128(oneToken), GOIL_TOKEN, purchaseToken);
+        uint256 price = OracleLibrary.getQuoteAtTick(tick, uint128(ONE_TOKEN), GOIL_TOKEN, purchaseToken);
 
         return price;
     }
@@ -60,7 +61,7 @@ contract Oracle is AccessControl, IOracle {
         return amount;
     }
 
-    function setSecondsAgo(uint32 _secondsAgo) external onlyRole(MANAGER_ROLE) {
+    function setSecondsAgo(uint32 _secondsAgo) external onlyRole(ORACLE_MANAGER_ROLE) {
         if (_secondsAgo == 0) revert ZeroSecondsAgo();
         if (_secondsAgo == secondsAgo) revert SecondsCannotBeTheSame();
         secondsAgo = _secondsAgo;
@@ -68,7 +69,7 @@ contract Oracle is AccessControl, IOracle {
         emit SecondsAgoUpdated(_secondsAgo);
     }
 
-    function setPoolForTrackingPrice(address _purchaseToken, uint24 _poolFee) external onlyRole(MANAGER_ROLE) {
+    function setPoolForTrackingPrice(address _purchaseToken, uint24 _poolFee) external onlyRole(ORACLE_MANAGER_ROLE) {
         address newPool = FACTORY_V3.getPool(_purchaseToken, GOIL_TOKEN, _poolFee);
         if (newPool == address(0)) revert PoolDoesNotExist();
         if (newPool == pool) revert PoolCannotBeTheSame();
@@ -78,7 +79,6 @@ contract Oracle is AccessControl, IOracle {
 
         emit PurchaseTokenUpdated(_purchaseToken);
     }
-
 
     function _isContract(address _address) private view returns (bool) {
         uint32 size;

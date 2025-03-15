@@ -12,10 +12,10 @@ import {IOracle} from "../interfaces/vaults/IOracle.sol";
 
 contract Treasury is AccessControl, ITreasury {
     using SafeERC20 for IERC20;
-    bytes32 MANAGER_ROLE = keccak256("MANAGER_ROLE");
+
+    bytes32 public constant TREASURY_MANAGER_ROLE = keccak256("TREASURY_MANAGER_ROLE");
 
     uint256 public constant MAX_COLLATERAL_PERCENTAGE = 100_00;
-    uint256 public constant REQUIRED_COLLATERAL_PERCENTAGE = 10_00;
 
     IVaultFactory public immutable VAULT_FACTORY;
     IERC20 public immutable GOIL_TOKEN;
@@ -24,9 +24,11 @@ contract Treasury is AccessControl, ITreasury {
     address public SCORING;
     address public STAKING;
 
+    uint256 public requiredCollateralPercentage = 10_00;
     uint256 public totalRefundableAmount;
 
     mapping(address => Collateral) public collateral;
+    mapping(address => uint256) public totalBorrowed; // total borrowed active amount by entity
 
     modifier onlyScoring() {
         if (msg.sender != SCORING) revert OnlyScoringAllowed();
@@ -43,9 +45,19 @@ contract Treasury is AccessControl, ITreasury {
         _;
     }
 
+    modifier onlyVault() {
+        if (!VAULT_FACTORY.isVault(msg.sender)) revert OnlyVaultAllowed();
+        _;
+    }
+
     modifier onlyLicense() {
         if (msg.sender != address(LICENSE)) revert OnlyLicenseAllowed();
         _;
+    }
+
+    modifier withLockedRefundableAmount() {
+        _;
+        if (getGoilBalance() < totalRefundableAmount) revert InsufficientRefundableAmount();
     }
 
     modifier withSetupNecessaryContracts() {
@@ -71,76 +83,96 @@ contract Treasury is AccessControl, ITreasury {
         GOIL_TOKEN = IERC20(_goilToken);
 
         _grantRole(DEFAULT_ADMIN_ROLE, _admin);
-        _grantRole(MANAGER_ROLE, _admin);
+        _grantRole(TREASURY_MANAGER_ROLE, _admin);
     }
 
-    function depositCollateral(address _entity, uint256 _amount) public onlyLicense withSetupNecessaryContracts {
+    function depositCollateral(
+        address _entity,
+        uint256 _amount
+    ) public onlyLicense withSetupNecessaryContracts {
         if (_amount == 0) revert ZeroAmountToDeposit();
 
         collateral[_entity].collateralLocked += _amount;
         GOIL_TOKEN.transferFrom(msg.sender, address(this), _amount);
 
-        emit CollateralDeposited(msg.sender, _entity, address(0), _amount);
+        emit CollateralDeposited(_entity, _amount);
     }
 
-    function depositCollateral(address _vault) external onlyVaultFactory withSetupNecessaryContracts {
-        IVault vault = IVault(_vault);
-        address entity = vault.owner();
+    function depositCollateral(
+        address _entity,
+        uint256 _requiredCollateral,
+        uint256 _refundableAmount,
+        uint256 _poolSize
+    ) external onlyVaultFactory withSetupNecessaryContracts {
+        collateral[_entity].collateralLocked += _requiredCollateral;
+        totalBorrowed[_entity] += _poolSize;
+        totalRefundableAmount += _refundableAmount;
 
-        uint256 requiredCollateral = VAULT_FACTORY.getCollateralAmount(_vault);
-        uint256 refundableAmount = VAULT_FACTORY.getRefundableAmount(_vault);
-
-        collateral[entity].collateralLocked += requiredCollateral;
-        totalRefundableAmount += refundableAmount;
-
-        GOIL_TOKEN.transferFrom(entity, address(this), requiredCollateral);
-        emit CollateralDeposited(entity, entity, _vault, requiredCollateral);
+        GOIL_TOKEN.transferFrom(_entity, address(this), _requiredCollateral);
+        emit CollateralDeposited(_entity, _requiredCollateral);
     }
 
-    function withdrawCollateral(uint256 _amount) external withSetupNecessaryContracts {
-        if (_amount == 0) revert ZeroAmountToWithdraw();
-
+    function withdrawCollateral() external withSetupNecessaryContracts withLockedRefundableAmount {
         address entity = msg.sender;
+        uint256 collateralAmount;
 
-        if (LICENSE.getLicenseIsActive(entity)) {
-            if (collateral[entity].collateralUnlocked < _amount) revert InsufficientCollateral();
-            collateral[entity].collateralUnlocked -= _amount;
-        }
-
-        if (collateral[entity].collateralLocked < _amount) revert InsufficientCollateral();
-        collateral[entity].collateralLocked -= _amount;
-
-        GOIL_TOKEN.transfer(entity, _amount);
-        emit CollateralWithdrawn(entity, _amount);
-    }
-
-    function unlockCollateral(address _vault) external onlyScoring withSetupNecessaryContracts {
-        IVault vault = IVault(_vault);
-        address entity = vault.owner();
-        uint256 collateralAmount = VAULT_FACTORY.getCollateralAmount(_vault);
-
-        collateral[entity].collateralUnlocked += collateralAmount;
-        emit CollateralUnlocked(entity, collateralAmount);
-    }
-
-    function fundVault(address _vault) external onlyScoring withSetupNecessaryContracts {
-        if (!VAULT_FACTORY.getIsValidVault(_vault)) revert VaultIsNotValid();
-
-        address entity = VAULT_FACTORY.getVaultEntity(_vault);
-        uint256 refundableAmount = VAULT_FACTORY.getRefundableAmount(_vault);
-        uint256 collateralAmountByEntity = collateral[entity].collateralLocked;
-
-        if (collateralAmountByEntity < refundableAmount) {
-            collateral[entity].collateralLocked = 0;
+        if (LICENSE.getLicenseExpirationTime(entity) + VAULT_FACTORY.VAULT_EXPIRY_LIMIT_AFTER_LICENSE() >= block.timestamp) {
+            collateralAmount = collateral[entity].collateralUnlocked;
+            collateral[entity].collateralUnlocked = 0;
         } else {
-            collateral[entity].collateralLocked -= refundableAmount;
+            collateralAmount = collateral[entity].collateralLocked + collateral[entity].collateralUnlocked;
+            collateral[entity].collateralLocked = 0;
+            collateral[entity].collateralUnlocked = 0;
         }
 
-        GOIL_TOKEN.transfer(_vault, refundableAmount);
-        emit VaultFunded(_vault, refundableAmount);
+        if (collateralAmount == 0) revert NoCollateralToWithdraw();
+
+        GOIL_TOKEN.transfer(entity, collateralAmount);
+        emit CollateralWithdrawn(entity, collateralAmount);
     }
 
-    function unstakeTokens(address _recipient, uint256 _amount) external onlyStaking withSetupNecessaryContracts {
+    function unlockCollateralAndBorrowed(address _vault) external onlyScoring withSetupNecessaryContracts {
+        IVaultFactory.VaultInfo memory vaultInfo = VAULT_FACTORY.getVault(_vault);
+
+        bool isVaultSuccess = IVault(_vault).isVaultSuccess();
+        address entity = vaultInfo.entity;
+
+        if (isVaultSuccess) {
+            collateral[entity].collateralLocked -= vaultInfo.collateralAmount;
+            collateral[entity].collateralUnlocked += vaultInfo.collateralAmount; 
+        } else {
+            uint256 currentRefundableAmount = IVault(_vault).getCurrentRefundableAmount();
+            uint256 collateralLocked = collateral[entity].collateralLocked;
+
+            if (currentRefundableAmount <= collateralLocked) {
+                collateral[entity].collateralLocked -= currentRefundableAmount;
+            } else {
+                uint256 remainingAmount = currentRefundableAmount - collateralLocked;
+                collateral[entity].collateralLocked = 0;
+                collateral[entity].collateralUnlocked -= remainingAmount;
+            }
+        }
+
+        totalRefundableAmount -= vaultInfo.refundableAmount;
+        totalBorrowed[vaultInfo.entity] -= vaultInfo.desiredCap;
+
+        emit CollateralAndBorrowedUnlocked(vaultInfo.entity, _vault);
+    }
+
+    function fundVault(uint256 _refundableAmount) external onlyVault withSetupNecessaryContracts {
+        GOIL_TOKEN.transfer(msg.sender, _refundableAmount);
+        emit VaultFunded(msg.sender, _refundableAmount);
+    }
+
+    function unstakeTokens(
+        address _recipient,
+        uint256 _amount
+    )
+        external
+        onlyStaking
+        withSetupNecessaryContracts
+        withLockedRefundableAmount
+    {
         if (_recipient == address(0)) revert RecipientCannotBeZeroAddress();
         if (_amount == 0) revert ZeroAmountToTransfer();
 
@@ -148,16 +180,33 @@ contract Treasury is AccessControl, ITreasury {
         emit StakingTokensTransferred(_recipient, _amount);
     }
 
-    function withdrawTokens(address _recipient, address _token, uint256 _amount) external onlyRole(MANAGER_ROLE) {
+    function setRequiredCollateralPercentage(
+        uint256 _requiredCollateralPercentage
+    ) external onlyRole(TREASURY_MANAGER_ROLE) {
+        if (_requiredCollateralPercentage == 0) revert RequiredCollateralPercentageCannotBeZero();
+        if (_requiredCollateralPercentage == requiredCollateralPercentage) revert RequiredCollateralPercentageCannotBeTheSame();
+        if (_requiredCollateralPercentage > MAX_COLLATERAL_PERCENTAGE) revert RequiredCollateralPercentageTooHigh();
+
+        requiredCollateralPercentage = _requiredCollateralPercentage;
+        emit RequiredCollateralPercentageUpdated(_requiredCollateralPercentage);
+    }
+
+    function withdrawTokens(
+        address _recipient,
+        address _token,
+        uint256 _amount
+    ) external withLockedRefundableAmount onlyRole(TREASURY_MANAGER_ROLE) {
         IERC20(_token).safeTransfer(_recipient, _amount);
     }
 
-    function withdrawAllTokens(address _token) external onlyRole(MANAGER_ROLE) {
+    function withdrawAllTokens(
+        address _token
+    ) external withLockedRefundableAmount onlyRole(TREASURY_MANAGER_ROLE) {
         uint256 balance = IERC20(_token).balanceOf(address(this));
         IERC20(_token).safeTransfer(msg.sender, balance);
     }
 
-    function setScoringContract(address _scoring) external onlyRole(MANAGER_ROLE) {
+    function setScoringContract(address _scoring) external onlyRole(DEFAULT_ADMIN_ROLE) {
         if (SCORING != address(0)) revert ScoringAlreadySet();
         if (!_isContract(_scoring)) revert ScoringMustBeContract();
 
@@ -165,7 +214,7 @@ contract Treasury is AccessControl, ITreasury {
         emit ScoringContractUpdated(_scoring);
     }
 
-    function setStakingContract(address _staking) external onlyRole(MANAGER_ROLE) {
+    function setStakingContract(address _staking) external onlyRole(DEFAULT_ADMIN_ROLE) {
         if (STAKING != address(0)) revert StakingAlreadySet();
         if (!_isContract(_staking)) revert StakingMustBeContract();
 
@@ -173,7 +222,7 @@ contract Treasury is AccessControl, ITreasury {
         emit StakingContractUpdated(_staking);
     }
 
-    function setLicenseContract(address _license) external onlyRole(MANAGER_ROLE) {
+    function setLicenseContract(address _license) external onlyRole(DEFAULT_ADMIN_ROLE) {
         if (address(LICENSE) != address(0)) revert LicenseAlreadySet();
         if (!_isContract(_license)) revert LicenseMustBeContract();
 
@@ -181,20 +230,29 @@ contract Treasury is AccessControl, ITreasury {
         emit LicenseContractUpdated(_license);
     }
 
+    function getTotalBorrowed(address _entity) public view returns (uint256) {
+        return totalBorrowed[_entity];
+    }
+
     function getRequiredCollateral(uint256 _poolSize) public view returns (uint256) {
         uint256 poolSizeInGoil = ORACLE.getTokenAmountForPayment(_poolSize);
-        uint256 defaultCollateral = poolSizeInGoil * REQUIRED_COLLATERAL_PERCENTAGE / MAX_COLLATERAL_PERCENTAGE;
-        uint256 totalBalanceGoil = GOIL_TOKEN.balanceOf(address(this));
+        uint256 defaultCollateral = poolSizeInGoil * requiredCollateralPercentage / MAX_COLLATERAL_PERCENTAGE;
+        uint256 totalBalanceGoil = getGoilBalance();
 
-        if (totalBalanceGoil < totalRefundableAmount + poolSizeInGoil) {
+        if (totalBalanceGoil + defaultCollateral < totalRefundableAmount + poolSizeInGoil) {
             return poolSizeInGoil - (totalBalanceGoil - totalRefundableAmount);
         }
 
         return defaultCollateral;        
     }
 
+    function getGoilBalance() public view returns (uint256) {
+        return GOIL_TOKEN.balanceOf(address(this));
+    }
+
     function _isContract(address _address) private view returns (bool) {
         uint32 size;
+
         assembly {
             size := extcodesize(_address)
         }

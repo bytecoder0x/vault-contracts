@@ -9,7 +9,6 @@ interface IStaking {
         uint256 rewardDebt;
     }
 
-    error VaultFactoryMustBeContract();
     error StakingTokenMustBeContract();
     error RewardTokenMustBeContract();
     error TreasuryMustBeContract();
@@ -17,18 +16,23 @@ interface IStaking {
     error NoStakedTokens();
     error NoRewardToClaim();
     error InsufficientRewardPool();
-    error OnlyVault();
     error EndStakingBlockMustBeInTheFuture();
 
     event Staked(address indexed staker, uint256 amount);
     event Unstaked(address indexed staker, uint256 amount);
     event ClaimReward(address indexed staker, uint256 amount);
-    event RewardTransferred(address indexed vault, uint256 amount);
+    event RewardDeposited(address indexed depositor, uint256 amount);
 
+    
     function stakeTokens(uint256 _amount) external;
+    function unstakeTokens() external;
+    function claimReward() external;
     function unstakeTokens(address _to) external;
     function claimReward(address _to) external;
-    function transferReward(uint256 _amount) external;
+    function depositReward(uint256 _amount) external;
+    function getCurrentAPY() external view returns (uint256);
+    function getRewardPerBlock() external view returns (uint256);
+    function getStakedAmount(address _user) external view returns (uint256);
     function getPendingRewardByUser(address _user) external view returns (uint256);
     function getPendingRewardByUsers(address[] memory _users) external view returns (uint256[] memory);
 }
